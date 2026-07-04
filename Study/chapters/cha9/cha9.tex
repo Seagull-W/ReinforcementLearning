@@ -1,0 +1,765 @@
+\documentclass[UTF8]{article}
+% ========== 基础宏包 ==========
+\usepackage{ctex}                % 中文支持
+\usepackage{amsmath,amssymb}     % 数学公式
+\usepackage{geometry}            % 页面边距
+\usepackage{titlesec}            % 自定义标题格式
+\usepackage{enumitem}            % 列表格式控制
+\usepackage{microtype}           % 微排版优化
+\usepackage{xcolor}              % 颜色支持
+\usepackage{tcolorbox}           % 彩色盒子
+\tcbuselibrary{most}             % 加载 tcolorbox 扩展库
+
+% ========== 页面设置 ==========
+\geometry{a4paper, margin=2.5cm}
+\linespread{1.2}                 % 1.2倍行距
+\setlength{\parskip}{0.5ex}      % 段落间距
+
+% ========== 标题格式 ==========
+\titleformat{\section}{\Large\bfseries\centering}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{0.8em}{}
+
+% ========== 列表环境（紧凑排版） ==========
+\setlist[itemize]{leftmargin=*, nosep, topsep=0.3ex, parsep=0ex, partopsep=0ex}
+\setlist[enumerate]{leftmargin=*, nosep, topsep=0.3ex, parsep=0ex, partopsep=0ex}
+
+% ========== 彩色模块定义 ==========
+% 定义环境：蓝色
+\newtcolorbox{definitionbox}{
+    colback=blue!5!white,
+    colframe=blue!70!black,
+    title=定义,
+    fonttitle=\bfseries\normalsize,
+    arc=2pt,
+    boxrule=0.8pt,
+    left=3mm, right=3mm, top=2mm, bottom=2mm
+}
+
+% 定理环境：橙色（支持编号）
+\newtcolorbox{theorembox}[1][]{
+    colback=orange!5!white,
+    colframe=orange!70!black,
+    title=定理 #1,
+    fonttitle=\bfseries\normalsize,
+    arc=2pt,
+    boxrule=0.8pt,
+    left=3mm, right=3mm, top=2mm, bottom=2mm
+}
+
+% 证明环境：绿色，支持跨页
+\newtcolorbox{proofbox}{
+    colback=green!5!white,
+    colframe=green!70!black,
+    title=证明,
+    fonttitle=\bfseries\normalsize,
+    breakable,
+    arc=2pt,
+    boxrule=0.8pt,
+    left=3mm, right=3mm, top=2mm, bottom=2mm
+}
+
+% 备注环境：紫色
+\newtcolorbox{remarkbox}{
+    colback=purple!5!white,
+    colframe=purple!70!black,
+    title=备注,
+    fonttitle=\bfseries\normalsize,
+    arc=2pt,
+    boxrule=0.8pt,
+    left=3mm, right=3mm, top=2mm, bottom=2mm
+}
+
+% ========== 文档信息 ==========
+\title{第9讲：策略梯度方法}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+% ============================================================
+\section*{第9讲：策略梯度方法}
+% ============================================================
+
+函数近似的思想不仅可以用于表示状态/动作价值（如第8讲所述），还可以用于表示策略，这正是本章的核心主题。到目前为止，本书中的策略一直以表格形式表示：所有状态的动作概率都存储在一张表中。本章将展示，策略可以用参数化函数来表示，记作 $\pi(a|s, \boldsymbol{\theta})$，其中 $\boldsymbol{\theta} \in \mathbb{R}^m$ 是参数向量。该形式也可以写作 $\pi_{\boldsymbol{\theta}}(a|s)$、$\pi_{\boldsymbol{\theta}}(a,s)$ 或 $\pi(a,s;\boldsymbol{\theta})$。
+
+当策略以函数形式表示时，可以通过优化某个标量指标来获得最优策略。这种方法被称为\textbf{策略梯度}（policy gradient）。策略梯度方法是本书的一大进步，因为它是\textbf{基于策略的（policy-based）}方法，而此前各章讨论的都是\textbf{基于价值的（value-based）}方法。策略梯度方法的优势众多。例如，它在处理大状态/动作空间时效率更高；它具有更强的泛化能力，因此样本利用效率更高。
+
+\subsection*{9.1 策略表示：从表格到函数}
+
+当策略的表示从表格切换到函数时，有必要澄清两种表示方法的区别。
+
+\begin{itemize}
+    \item \textbf{第一，如何定义最优策略？}当用表格表示时，若一个策略能最大化每个状态的价值，则该策略被定义为最优。当用函数表示时，若一个策略能最大化某个\textbf{标量指标}，则该策略被定义为最优。
+    \item \textbf{第二，如何更新策略？}当用表格表示时，可以通过直接修改表中条目来更新策略。当用参数化函数表示时，策略无法再通过这种方式更新，只能通过改变参数 $\boldsymbol{\theta}$ 来更新。
+    \item \textbf{第三，如何获取动作的概率？}在表格情况下，可以直接查表获取动作的概率。在函数表示情况下，需要将 $(s,a)$ 输入函数计算其概率。根据函数的结构不同，也可以输入状态然后输出所有动作的概率。
+\end{itemize}
+
+策略梯度方法的基本思想总结如下。设 $J(\boldsymbol{\theta})$ 是一个标量指标，可以通过基于梯度的算法优化该指标来获得最优策略：
+\[
+\boldsymbol{\theta}_{t+1} = \boldsymbol{\theta}_t + \alpha \nabla_{\boldsymbol{\theta}} J(\boldsymbol{\theta}_t);
+\]
+其中 $\nabla_{\boldsymbol{\theta}} J$ 是 $J$ 对 $\boldsymbol{\theta}$ 的梯度，$t$ 是时间步，$\alpha$ 是优化步长。
+
+基于这一基本思想，本章将回答以下三个问题：
+\begin{itemize}
+    \item 应该使用什么指标？（第9.2节）
+    \item 如何计算这些指标的梯度？（第9.3节）
+    \item 如何利用经验样本计算梯度？（第9.4节）
+\end{itemize}
+
+\subsection*{9.2 定义最优策略的指标}
+
+如果策略用函数表示，有两种类型的指标可用于定义最优策略。一种基于状态价值，另一种基于即时奖励。
+
+\subsubsection*{指标1：平均状态价值}
+
+第一个指标是\textbf{平均状态价值}（average state value），简称平均价值。其定义为：
+\[
+\bar{v}_\pi = \sum_{s \in \mathcal{S}} d(s) v_\pi(s);
+\]
+其中 $d(s)$ 是状态 $s$ 的权重。它满足对任意 $s \in \mathcal{S}$ 有 $d(s) \geq 0$，且 $\sum_{s \in \mathcal{S}} d(s) = 1$。因此，可以将 $d(s)$ 解释为 $s$ 的概率分布。那么该指标可以写作：
+\[
+\bar{v}_\pi = \mathbb{E}_{S \sim d}[v_\pi(S)].
+\]
+
+如何选择分布 $d$？这是一个重要问题，有两种情形。
+
+\begin{itemize}
+    \item 第一种也是最简单的情形是 $d$ 独立于策略 $\pi$。此时我们特别记 $d$ 为 $d_0$，记 $\bar{v}_\pi$ 为 $\bar{v}_\pi^0$ 以表明该分布与策略无关。一种情况是将所有状态视为同等重要并取 $d_0(s) = 1/|\mathcal{S}|$。另一种情况是我们只关心某个特定状态 $s_0$（如智能体总是从 $s_0$ 出发），此时可以设计 $d_0(s_0) = 1$，$d_0(s \neq s_0) = 0$。
+    \item 第二种情形是 $d$ 依赖于策略 $\pi$。此时通常取 $d$ 为 $\pi$ 下的\textbf{平稳分布} $d_\pi$。$d_\pi$ 的一个基本性质是它满足：
+    \[
+    d_\pi^T \boldsymbol{P}_\pi = d_\pi^T;
+    \]
+    其中 $\boldsymbol{P}_\pi$ 是状态转移概率矩阵。选取 $d_\pi$ 的解释如下：平稳分布反映了马尔可夫决策过程在给定策略下的长期行为。如果一个状态在长期中被频繁访问，它就更重要，应该得到更高的权重；如果一个状态很少被访问，则其重要性较低，应该得到较低的权重。
+\end{itemize}
+
+顾名思义，$\bar{v}_\pi$ 是状态价值的加权平均。不同的 $\boldsymbol{\theta}$ 值会导致不同的 $\bar{v}_\pi$ 值。我们的最终目标是找到一个最优策略（等价于最优的 $\boldsymbol{\theta}$）来最大化 $\bar{v}_\pi$。
+
+下面介绍 $\bar{v}_\pi$ 的另外两个重要等价表达式。
+
+\begin{itemize}
+    \item 假设智能体遵循给定策略 $\pi(\boldsymbol{\theta})$ 收集奖励 $\{R_{t+1}\}_{t=0}^{\infty}$。在文献中常见的如下指标：
+    \begin{equation}
+    J(\boldsymbol{\theta}) = \lim_{n \to \infty} \mathbb{E}\left[ \sum_{t=0}^{n} \gamma^t R_{t+1} \right]
+    = \mathbb{E}\left[ \sum_{t=0}^{\infty} \gamma^t R_{t+1} \right]. \label{eq:J_discounted}
+    \end{equation}
+    该指标实际上等于 $\bar{v}_\pi$。为了说明这一点：
+    \[
+    \mathbb{E}\left[ \sum_{t=0}^{\infty} \gamma^t R_{t+1} \right]
+    = \sum_{s \in \mathcal{S}} d(s) \mathbb{E}\left[ \sum_{t=0}^{\infty} \gamma^t R_{t+1} \,\middle|\, S_0 = s \right]
+    = \sum_{s \in \mathcal{S}} d(s) v_\pi(s) = \bar{v}_\pi.
+    \]
+    上式第一个等号是全期望公式，第二个等号是状态价值的定义。
+    \item 指标 $\bar{v}_\pi$ 还可以改写为两个向量的内积形式。令
+    \[
+    \boldsymbol{v}_\pi = [\dots, v_\pi(s), \dots]^T \in \mathbb{R}^{|\mathcal{S}|}, \quad
+    \boldsymbol{d} = [\dots, d(s), \dots]^T \in \mathbb{R}^{|\mathcal{S}|}.
+    \]
+    则有：
+    \[
+    \bar{v}_\pi = \boldsymbol{d}^T \boldsymbol{v}_\pi.
+    \]
+    该表达式在分析其梯度时将非常有用。
+\end{itemize}
+
+\subsubsection*{指标2：平均奖励}
+
+第二个指标是\textbf{平均单步奖励}（average one-step reward），简称为平均奖励。其定义为：
+\begin{equation}
+\bar{r}_\pi := \sum_{s \in \mathcal{S}} d_\pi(s) r_\pi(s) = \mathbb{E}_{S \sim d_\pi}[r_\pi(S)]; \label{eq:avg_reward}
+\end{equation}
+其中 $d_\pi$ 是平稳分布，且
+\begin{equation}
+r_\pi(s) := \sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) r(s,a) = \mathbb{E}_{A \sim \pi(s,\boldsymbol{\theta})}[r(s,A) | s] \label{eq:r_pi}
+\end{equation}
+是即时奖励的期望。这里 $r(s,a) := \mathbb{E}[R|s,a] = \sum_{r} r \, p(r|s,a)$。
+
+下面介绍 $\bar{r}_\pi$ 的另外两个重要等价表达式。
+
+\begin{itemize}
+    \item 假设智能体遵循给定策略 $\pi(\boldsymbol{\theta})$ 收集奖励 $\{R_{t+1}\}_{t=0}^{\infty}$。文献中常见的另一个指标是：
+    \begin{equation}
+    J(\boldsymbol{\theta}) = \lim_{n \to \infty} \frac{1}{n} \mathbb{E}\left[ \sum_{t=0}^{n-1} R_{t+1} \right]. \label{eq:J_undiscounted}
+    \end{equation}
+    它实际上等于 $\bar{r}_\pi$：
+    \begin{equation}
+    \lim_{n \to \infty} \frac{1}{n} \mathbb{E}\left[ \sum_{t=0}^{n-1} R_{t+1} \right]
+    = \sum_{s \in \mathcal{S}} d_\pi(s) r_\pi(s) = \bar{r}_\pi. \label{eq:avg_reward_proof}
+    \end{equation}
+    \eqref{eq:avg_reward_proof} 的证明见下文。
+    \item 平均奖励 $\bar{r}_\pi$ 也可以写成两个向量的内积。令
+    \[
+    \boldsymbol{r}_\pi = [\dots, r_\pi(s), \dots]^T \in \mathbb{R}^{|\mathcal{S}|}, \quad
+    \boldsymbol{d}_\pi = [\dots, d_\pi(s), \dots]^T \in \mathbb{R}^{|\mathcal{S}|};
+    \]
+    其中 $r_\pi(s)$ 由 \eqref{eq:r_pi} 定义。则显然有：
+    \[
+    \bar{r}_\pi = \sum_{s \in \mathcal{S}} d_\pi(s) r_\pi(s) = \boldsymbol{d}_\pi^T \boldsymbol{r}_\pi.
+    \]
+    该表达式在推导其梯度时将非常有用。
+\end{itemize}
+
+\begin{proofbox}
+\noindent\textbf{证明 \eqref{eq:avg_reward_proof}：}
+
+\textbf{步骤 1：}首先证明对任意起始状态 $s_0 \in \mathcal{S}$，以下等式成立：
+\[
+\bar{r}_\pi = \lim_{n \to \infty} \frac{1}{n} \mathbb{E}\left[ \sum_{t=0}^{n-1} R_{t+1} \;\middle|\; S_0 = s_0 \right].
+\]
+
+为此，注意到：
+\[
+\lim_{n \to \infty} \frac{1}{n} \mathbb{E}\left[ \sum_{t=0}^{n-1} R_{t+1} \;\middle|\; S_0 = s_0 \right]
+= \lim_{n \to \infty} \frac{1}{n} \sum_{t=0}^{n-1} \mathbb{E}[R_{t+1} | S_0 = s_0]
+= \lim_{t \to \infty} \mathbb{E}[R_{t+1} | S_0 = s_0];
+\]
+其中最后一个等号来自 Ces\`{a}ro 均值的性质：若 $\{a_k\}_{k=1}^{\infty}$ 是收敛序列且 $\lim_{k\to\infty} a_k$ 存在，则 $\{\frac{1}{n}\sum_{k=1}^{n} a_k\}_{n=1}^{\infty}$ 也是收敛序列且 $\lim_{n\to\infty} \frac{1}{n} \sum_{k=1}^{n} a_k = \lim_{k\to\infty} a_k$。
+
+进一步考察 $\mathbb{E}[R_{t+1} | S_0 = s_0]$。由全期望公式：
+\[
+\mathbb{E}[R_{t+1} | S_0 = s_0] = \sum_{s \in \mathcal{S}} \mathbb{E}[R_{t+1} | S_t = s, S_0 = s_0] \; p^{(t)}(s|s_0)
+= \sum_{s \in \mathcal{S}} \mathbb{E}[R_{t+1} | S_t = s] \; p^{(t)}(s|s_0)
+= \sum_{s \in \mathcal{S}} r_\pi(s) \, p^{(t)}(s|s_0);
+\]
+其中 $p^{(t)}(s|s_0)$ 表示从 $s_0$ 出发恰好在 $t$ 步后到达 $s$ 的概率。第三个等号来自马尔可夫记忆无关性质。
+
+由平稳分布的定义，$\lim_{t \to \infty} p^{(t)}(s|s_0) = d_\pi(s)$，因此：
+\[
+\lim_{t \to \infty} \mathbb{E}[R_{t+1} | S_0 = s_0] = \lim_{t \to \infty} \sum_{s \in \mathcal{S}} r_\pi(s) \, p^{(t)}(s|s_0) = \sum_{s \in \mathcal{S}} r_\pi(s) d_\pi(s) = \bar{r}_\pi.
+\]
+
+\textbf{步骤 2：}考虑任意状态分布 $d$。由全期望公式：
+\[
+\lim_{n \to \infty} \frac{1}{n} \mathbb{E}\left[ \sum_{t=0}^{n-1} R_{t+1} \right]
+= \lim_{n \to \infty} \frac{1}{n} \sum_{s \in \mathcal{S}} d(s) \, \mathbb{E}\left[ \sum_{t=0}^{n-1} R_{t+1} \;\middle|\; S_0 = s \right]
+= \sum_{s \in \mathcal{S}} d(s) \, \lim_{n \to \infty} \frac{1}{n} \mathbb{E}\left[ \sum_{t=0}^{n-1} R_{t+1} \;\middle|\; S_0 = s \right].
+\]
+
+由于步骤1对任意起始状态成立，代入得：
+\[
+\lim_{n \to \infty} \frac{1}{n} \mathbb{E}\left[ \sum_{t=0}^{n-1} R_{t+1} \right]
+= \sum_{s \in \mathcal{S}} d(s) \bar{r}_\pi = \bar{r}_\pi.
+\]
+
+证明完毕。
+\end{proofbox}
+
+\begin{remarkbox}
+到目前为止，我们介绍了两种类型的指标：$\bar{v}_\pi$ 和 $\bar{r}_\pi$。每个指标都有几种不同但等价的表达式。有时我们用 $\bar{v}_\pi$ 特指状态分布为平稳分布 $d_\pi$ 的情形，用 $\bar{v}_\pi^0$ 指 $d_0$ 独立于 $\pi$ 的情形。
+
+关于这些指标的一些说明：
+\begin{itemize}
+    \item 所有这些指标都是 $\pi$ 的函数。由于 $\pi$ 由 $\boldsymbol{\theta}$ 参数化，这些指标也是 $\boldsymbol{\theta}$ 的函数。换句话说，不同的 $\boldsymbol{\theta}$ 值可以产生不同的指标值。因此，我们可以搜索 $\boldsymbol{\theta}$ 的最优值来最大化这些指标。这就是策略梯度方法的基本思想。
+    \item 在折扣情形（$\gamma < 1$）下，两种指标 $\bar{v}_\pi$ 和 $\bar{r}_\pi$ 是等价的。具体而言，可以证明：
+    \[
+    \bar{r}_\pi = (1 - \gamma) \bar{v}_\pi.
+    \]
+    上式表明这两个指标可以同时最大化。该等式的证明将在引理 9.1 中给出。
+\end{itemize}
+\end{remarkbox}
+
+\subsection*{9.3 指标的梯度}
+
+给定上一节引入的指标，可以使用基于梯度的方法来最大化它们。为此，需要首先计算这些指标的梯度。本章最重要的理论结果是以下定理。
+
+\begin{theorembox}[9.1 策略梯度定理]
+    梯度 $J(\boldsymbol{\theta})$：
+    \begin{equation}
+    \nabla_{\boldsymbol{\theta}} J(\boldsymbol{\theta}) = \sum_{s \in \mathcal{S}} \eta(s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s, a); \label{eq:pg_1}
+    \end{equation}
+    其中 $\eta$ 是一个状态分布，$\nabla_{\boldsymbol{\theta}} \pi$ 是 $\pi$ 对 $\boldsymbol{\theta}$ 的梯度。此外，\eqref{eq:pg_1} 有一个用期望表示的紧凑形式：
+    \begin{equation}
+    \nabla_{\boldsymbol{\theta}} J(\boldsymbol{\theta}) = \mathbb{E}_{S \sim \eta, \, A \sim \pi(S,\boldsymbol{\theta})} \left[ \nabla_{\boldsymbol{\theta}} \ln \pi(A|S, \boldsymbol{\theta}) \, q_\pi(S, A) \right]; \label{eq:pg_2}
+    \end{equation}
+    其中 $\ln$ 是自然对数。
+\end{theorembox}
+
+\begin{remarkbox}
+关于定理 9.1 的一些重要说明：
+\begin{itemize}
+    \item 需要注意的是，定理 9.1 是定理 9.2、定理 9.3 和定理 9.5 的结果的总结。这三个定理针对不同指标和折扣/非折扣情形的不同场景。这些场景中的梯度都有类似的表达式，因此汇总在定理 9.1 中。$J(\boldsymbol{\theta})$ 和 $\eta$ 的具体表达式未在定理 9.1 中给出，可在定理 9.2、定理 9.3 和定理 9.5 中找到。具体来说，$J(\boldsymbol{\theta})$ 可以是 $\bar{v}_\pi^0$、$\bar{v}_\pi$ 或 $\bar{r}_\pi$。\eqref{eq:pg_1} 中的等号可能是精确等式或近似。分布 $\eta$ 在不同场景中也不同。
+    \item 梯度的推导是策略梯度方法中最复杂的部分。对大多数读者来说，熟悉定理 9.1 的结果而不需要了解证明就足够了。本节后续内容中的推导细节在数学上较为密集，建议读者根据兴趣选择性学习。
+    \item \eqref{eq:pg_2} 中的表达式比 \eqref{eq:pg_1} 更受欢迎，因为它以期望的形式表达。我们将在第 9.4 节中展示，这个真实梯度可以用随机梯度来近似。
+\end{itemize}
+\end{remarkbox}
+
+为什么 \eqref{eq:pg_1} 可以表示为 \eqref{eq:pg_2}？证明如下。由期望的定义，\eqref{eq:pg_1} 可以改写为：
+\[
+\nabla_{\boldsymbol{\theta}} J(\boldsymbol{\theta}) = \sum_{s \in \mathcal{S}} \eta(s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a)
+= \mathbb{E}_{S \sim \eta} \left[ \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|S, \boldsymbol{\theta}) \, q_\pi(S,a) \right].
+\]
+
+进一步地，$\ln \pi(a|s, \boldsymbol{\theta})$ 的梯度为：
+\[
+\nabla_{\boldsymbol{\theta}} \ln \pi(a|s, \boldsymbol{\theta}) = \frac{\nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta})}{\pi(a|s, \boldsymbol{\theta})}.
+\]
+
+由此可得：
+\[
+\nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) = \pi(a|s, \boldsymbol{\theta}) \, \nabla_{\boldsymbol{\theta}} \ln \pi(a|s, \boldsymbol{\theta}).
+\]
+
+代入得：
+\[
+\nabla_{\boldsymbol{\theta}} J(\boldsymbol{\theta}) = \mathbb{E}\left[ \sum_{a \in \mathcal{A}} \pi(a|S, \boldsymbol{\theta}) \, \nabla_{\boldsymbol{\theta}} \ln \pi(a|S, \boldsymbol{\theta}) \, q_\pi(S, a) \right]
+= \mathbb{E}_{S \sim \eta, \, A \sim \pi(S,\boldsymbol{\theta})} \left[ \nabla_{\boldsymbol{\theta}} \ln \pi(A|S, \boldsymbol{\theta}) \, q_\pi(S, A) \right].
+\]
+
+\begin{remarkbox}
+值得注意的是，$\pi(a|s, \boldsymbol{\theta})$ 必须对所有 $(s,a)$ 为正，以确保 $\ln \pi(a|s, \boldsymbol{\theta})$ 有效。这可以通过使用\textbf{softmax 函数}来实现：
+\[
+\pi(a|s, \boldsymbol{\theta}) = \frac{e^{h(s,a,\boldsymbol{\theta})}}{\sum_{a' \in \mathcal{A}} e^{h(s,a',\boldsymbol{\theta})}}, \quad a \in \mathcal{A};
+\]
+其中 $h(s, a, \boldsymbol{\theta})$ 是一个表示在状态 $s$ 选择动作 $a$ 的偏好函数。该策略满足对任意 $s \in \mathcal{S}$ 有 $\pi(a|s, \boldsymbol{\theta}) \in (0,1)$ 且 $\sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) = 1$。该策略可以用神经网络实现：网络的输入是 $s$，输出层是 softmax 层，因此网络输出所有 $a$ 的 $\pi(a|s, \boldsymbol{\theta})$ 且输出之和为 1。
+
+由于对所有 $a$ 有 $\pi(a|s, \boldsymbol{\theta}) > 0$，该策略是\textbf{随机性的}，因此具有\textbf{探索性}。策略不直接指示采取哪个动作，而是应该根据策略的概率分布来生成动作。
+\end{remarkbox}
+
+\subsubsection*{9.3.1 折扣情形下的梯度推导}
+
+下面推导在折扣情形（$\gamma \in (0,1)$）下的指标梯度。折扣情形下的状态价值和动作价值定义为：
+\begin{align*}
+v_\pi(s) &= \mathbb{E}[R_{t+1} + \gamma R_{t+2} + \gamma^2 R_{t+3} + \dots \mid S_t = s], \\
+q_\pi(s,a) &= \mathbb{E}[R_{t+1} + \gamma R_{t+2} + \gamma^2 R_{t+3} + \dots \mid S_t = s, A_t = a].
+\end{align*}
+有关系 $v_\pi(s) = \sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a)$，状态价值满足贝尔曼方程。
+
+首先，我们说明 $\bar{v}_\pi(\boldsymbol{\theta})$ 和 $\bar{r}_\pi(\boldsymbol{\theta})$ 是等价指标。
+
+\begin{theorembox}[9.1 $\bar{v}_\pi(\boldsymbol{\theta})$ 与 $\bar{r}_\pi(\boldsymbol{\theta})$ 的等价性]
+    在折扣情形（$\gamma \in (0,1)$）下，有：
+    \[
+    \bar{r}_\pi = (1 - \gamma) \bar{v}_\pi.
+    \]
+\end{theorembox}
+
+\begin{proofbox}
+注意 $\bar{v}_\pi(\boldsymbol{\theta}) = \boldsymbol{d}_\pi^T \boldsymbol{v}_\pi$，$\bar{r}_\pi(\boldsymbol{\theta}) = \boldsymbol{d}_\pi^T \boldsymbol{r}_\pi$，其中 $\boldsymbol{v}_\pi$ 和 $\boldsymbol{r}_\pi$ 满足贝尔曼方程 $\boldsymbol{v}_\pi = \boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}_\pi$。在贝尔曼方程两边同时左乘 $\boldsymbol{d}_\pi^T$ 得：
+\[
+\bar{v}_\pi = \bar{r}_\pi + \gamma \boldsymbol{d}_\pi^T \boldsymbol{P}_\pi \boldsymbol{v}_\pi = \bar{r}_\pi + \gamma \boldsymbol{d}_\pi^T \boldsymbol{v}_\pi = \bar{r}_\pi + \gamma \bar{v}_\pi;
+\]
+由此即得 $\bar{r}_\pi = (1 - \gamma) \bar{v}_\pi$。
+\end{proofbox}
+
+其次，以下引理给出了对任意 $s$ 的 $v_\pi(s)$ 的梯度。
+
+\begin{theorembox}[9.2 $v_\pi(s)$ 的梯度]
+    在折扣情形下，对任意 $s \in \mathcal{S}$ 有：
+    \begin{equation}
+    \nabla_{\boldsymbol{\theta}} v_\pi(s) = \sum_{s' \in \mathcal{S}} \Pr\nolimits_\pi(s'|s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s', \boldsymbol{\theta}) \, q_\pi(s', a); \label{eq:grad_v}
+    \end{equation}
+    其中
+    \[
+    \Pr\nolimits_\pi(s'|s) := \sum_{k=0}^{\infty} \gamma^k [\boldsymbol{P}_\pi^k]_{ss'} = \bigl[ (\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)^{-1} \bigr]_{ss'}
+    \]
+    是在策略 $\pi$ 下从 $s$ 转移到 $s'$ 的折扣总概率。这里 $[\cdot]_{ss'}$ 表示第 $s$ 行第 $s'$ 列的条目，$[\boldsymbol{P}_\pi^k]_{ss'}$ 是在 $\pi$ 下从 $s$ 出发恰好用 $k$ 步转移到 $s'$ 的概率。
+\end{theorembox}
+
+\begin{proofbox}
+首先，对任意 $s \in \mathcal{S}$：
+\begin{align*}
+\nabla_{\boldsymbol{\theta}} v_\pi(s) &= \nabla_{\boldsymbol{\theta}} \left[ \sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a) \right] \\
+&= \sum_{a \in \mathcal{A}} \bigl[ \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a) + \pi(a|s, \boldsymbol{\theta}) \, \nabla_{\boldsymbol{\theta}} q_\pi(s,a) \bigr];
+\end{align*}
+其中动作价值为：
+\[
+q_\pi(s,a) = r(s,a) + \gamma \sum_{s' \in \mathcal{S}} p(s'|s,a) \, v_\pi(s').
+\]
+由于 $r(s,a) = \sum_{r} r \, p(r|s,a)$ 独立于 $\boldsymbol{\theta}$，有：
+\[
+\nabla_{\boldsymbol{\theta}} q_\pi(s,a) = 0 + \gamma \sum_{s' \in \mathcal{S}} p(s'|s,a) \, \nabla_{\boldsymbol{\theta}} v_\pi(s').
+\]
+代入得：
+\begin{align*}
+\nabla_{\boldsymbol{\theta}} v_\pi(s) &= \sum_{a \in \mathcal{A}} \left[ \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a) + \pi(a|s, \boldsymbol{\theta}) \, \gamma \sum_{s' \in \mathcal{S}} p(s'|s,a) \, \nabla_{\boldsymbol{\theta}} v_\pi(s') \right] \\
+&= \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a) + \gamma \sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) \sum_{s' \in \mathcal{S}} p(s'|s,a) \, \nabla_{\boldsymbol{\theta}} v_\pi(s').
+\end{align*}
+
+值得注意的是，$\nabla_{\boldsymbol{\theta}} v_\pi$ 出现在上式的两边。下面使用矩阵-向量形式求解。令
+\[
+\boldsymbol{u}(s) := \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a).
+\]
+由于
+\[
+\sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) \sum_{s' \in \mathcal{S}} p(s'|s,a) \, \nabla_{\boldsymbol{\theta}} v_\pi(s') = \sum_{s' \in \mathcal{S}} p(s'|s) \, \nabla_{\boldsymbol{\theta}} v_\pi(s') = \sum_{s' \in \mathcal{S}} [\boldsymbol{P}_\pi]_{ss'} \, \nabla_{\boldsymbol{\theta}} v_\pi(s'),
+\]
+上式可以写成矩阵-向量形式：
+\[
+\nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi = \boldsymbol{u} + \gamma (\boldsymbol{P}_\pi \otimes \boldsymbol{I}_m) \, \nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi;
+\]
+其中 $n = |\mathcal{S}|$，$m$ 是参数向量 $\boldsymbol{\theta}$ 的维数，$\otimes$ 是 Kronecker 积。该方程是关于 $\nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi$ 的线性方程，可解为：
+\[
+\nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi = (\boldsymbol{I}_{nm} - \gamma \boldsymbol{P}_\pi \otimes \boldsymbol{I}_m)^{-1} \boldsymbol{u} = \bigl[ (\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)^{-1} \otimes \boldsymbol{I}_m \bigr] \boldsymbol{u}.
+\]
+
+对任意状态 $s$，有：
+\[
+\nabla_{\boldsymbol{\theta}} v_\pi(s) = \sum_{s' \in \mathcal{S}} \bigl[ (\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)^{-1} \bigr]_{ss'} \, \boldsymbol{u}(s')
+= \sum_{s' \in \mathcal{S}} \bigl[ (\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)^{-1} \bigr]_{ss'} \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s', \boldsymbol{\theta}) \, q_\pi(s',a).
+\]
+
+由于 $(\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)^{-1} = \boldsymbol{I} + \gamma \boldsymbol{P}_\pi + \gamma^2 \boldsymbol{P}_\pi^2 + \cdots$，$[(\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)^{-1}]_{ss'}$ 表示从 $s$ 转移到 $s'$ 的折扣总概率。记 $\Pr_\pi(s'|s) := [(\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)^{-1}]_{ss'}$，即得 \eqref{eq:grad_v}。
+\end{proofbox}
+
+借助引理 9.2 的结果，我们可以推导 $\bar{v}_\pi^0$ 的梯度。
+
+\begin{theorembox}[9.2 折扣情形下 $\bar{v}_\pi^0$ 的梯度]
+    在折扣情形（$\gamma \in (0,1)$）下，$\bar{v}_\pi^0 = \boldsymbol{d}_0^T \boldsymbol{v}_\pi$ 的梯度为：
+    \[
+    \nabla_{\boldsymbol{\theta}} \bar{v}_\pi^0 = \mathbb{E}\bigl[ \nabla_{\boldsymbol{\theta}} \ln \pi(A|S, \boldsymbol{\theta}) \, q_\pi(S, A) \bigr];
+    \]
+    其中 $S \sim \eta_\pi$ 且 $A \sim \pi(S, \boldsymbol{\theta})$。这里状态分布 $\eta_\pi$ 为：
+    \[
+    \eta_\pi(s) = \sum_{s' \in \mathcal{S}} d_0(s') \, \Pr\nolimits_\pi(s|s'), \quad s \in \mathcal{S};
+    \]
+    其中 $\Pr_\pi(s|s') = \sum_{k=0}^{\infty} \gamma^k [\boldsymbol{P}_\pi^k]_{s's} = [(\boldsymbol{I} - \gamma \boldsymbol{P}_\pi)^{-1}]_{s's}$ 是在策略 $\pi$ 下从 $s'$ 转移到 $s$ 的折扣总概率。
+\end{theorembox}
+
+\begin{proofbox}
+由于 $d_0(s)$ 独立于 $\pi$，有：
+\[
+\nabla_{\boldsymbol{\theta}} \bar{v}_\pi^0 = \nabla_{\boldsymbol{\theta}} \sum_{s \in \mathcal{S}} d_0(s) v_\pi(s) = \sum_{s \in \mathcal{S}} d_0(s) \nabla_{\boldsymbol{\theta}} v_\pi(s).
+\]
+
+将引理 9.2 中 $\nabla_{\boldsymbol{\theta}} v_\pi(s)$ 的表达式代入：
+\begin{align*}
+\nabla_{\boldsymbol{\theta}} \bar{v}_\pi^0 &= \sum_{s \in \mathcal{S}} d_0(s) \nabla_{\boldsymbol{\theta}} v_\pi(s)
+= \sum_{s \in \mathcal{S}} d_0(s) \sum_{s' \in \mathcal{S}} \Pr\nolimits_\pi(s'|s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s', \boldsymbol{\theta}) \, q_\pi(s',a) \\
+&= \sum_{s' \in \mathcal{S}} \left( \sum_{s \in \mathcal{S}} d_0(s) \Pr\nolimits_\pi(s'|s) \right) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s', \boldsymbol{\theta}) \, q_\pi(s',a) \\
+&:= \sum_{s' \in \mathcal{S}} \eta_\pi(s') \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s', \boldsymbol{\theta}) \, q_\pi(s',a).
+\end{align*}
+然后利用 $\nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) = \pi(a|s, \boldsymbol{\theta}) \, \nabla_{\boldsymbol{\theta}} \ln \pi(a|s, \boldsymbol{\theta})$ 即得最终形式。
+\end{proofbox}
+
+借助引理 9.1 和引理 9.2，可以推导 $\bar{r}_\pi$ 和 $\bar{v}_\pi$ 的梯度。
+
+\begin{theorembox}[9.3 折扣情形下 $\bar{r}_\pi$ 和 $\bar{v}_\pi$ 的梯度]
+    在折扣情形（$\gamma \in (0,1)$）下，$\bar{r}_\pi$ 和 $\bar{v}_\pi$ 的梯度为：
+    \begin{align*}
+    \nabla_{\boldsymbol{\theta}} \bar{r}_\pi &= (1 - \gamma) \nabla_{\boldsymbol{\theta}} \bar{v}_\pi
+    \approx \sum_{s \in \mathcal{S}} d_\pi(s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a) \\
+    &= \mathbb{E}\bigl[ \nabla_{\boldsymbol{\theta}} \ln \pi(A|S, \boldsymbol{\theta}) \, q_\pi(S, A) \bigr];
+    \end{align*}
+    其中 $S \sim d_\pi$，$A \sim \pi(S, \boldsymbol{\theta})$。该近似在 $\gamma$ 越接近 1 时越精确。
+\end{theorembox}
+
+\begin{proofbox}
+由 $\bar{v}_\pi$ 的定义：
+\[
+\nabla_{\boldsymbol{\theta}} \bar{v}_\pi = \nabla_{\boldsymbol{\theta}} \sum_{s \in \mathcal{S}} d_\pi(s) v_\pi(s)
+= \sum_{s \in \mathcal{S}} \nabla_{\boldsymbol{\theta}} d_\pi(s) \, v_\pi(s) + \sum_{s \in \mathcal{S}} d_\pi(s) \nabla_{\boldsymbol{\theta}} v_\pi(s).
+\]
+
+该方程包含两项。一方面，代入 $\nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi$ 的矩阵-向量解到第二项：
+\[
+\sum_{s \in \mathcal{S}} d_\pi(s) \nabla_{\boldsymbol{\theta}} v_\pi(s) = (\boldsymbol{d}_\pi^T \otimes \boldsymbol{I}_m) \nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi
+= \bigl[ \boldsymbol{d}_\pi^T (\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)^{-1} \otimes \boldsymbol{I}_m \bigr] \boldsymbol{u}.
+\]
+
+注意到 $\boldsymbol{d}_\pi^T (\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)^{-1} = \frac{1}{1-\gamma} \boldsymbol{d}_\pi^T$（可通过在方程两边右乘 $(\boldsymbol{I}_n - \gamma \boldsymbol{P}_\pi)$ 验证）。因此：
+\[
+\sum_{s \in \mathcal{S}} d_\pi(s) \nabla_{\boldsymbol{\theta}} v_\pi(s) = \frac{1}{1-\gamma} (\boldsymbol{d}_\pi^T \otimes \boldsymbol{I}_m) \boldsymbol{u}
+= \frac{1}{1-\gamma} \sum_{s \in \mathcal{S}} d_\pi(s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a).
+\]
+
+另一方面，第一项涉及 $\nabla_{\boldsymbol{\theta}} d_\pi$。然而，由于第二项包含 $\frac{1}{1-\gamma}$，当 $\gamma \to 1$ 时第二项占主导地位，第一项可以忽略。因此：
+\[
+\nabla_{\boldsymbol{\theta}} \bar{v}_\pi \approx \frac{1}{1-\gamma} \sum_{s \in \mathcal{S}} d_\pi(s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a).
+\]
+
+进而由 $\bar{r}_\pi = (1 - \gamma) \bar{v}_\pi$ 得：
+\[
+\nabla_{\boldsymbol{\theta}} \bar{r}_\pi = (1 - \gamma) \nabla_{\boldsymbol{\theta}} \bar{v}_\pi
+\approx \sum_{s \in \mathcal{S}} d_\pi(s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a)
+= \mathbb{E}\bigl[ \nabla_{\boldsymbol{\theta}} \ln \pi(A|S, \boldsymbol{\theta}) \, q_\pi(S, A) \bigr].
+\]
+
+该近似要求当 $\gamma \to 1$ 时第一项不趋于无穷。
+\end{proofbox}
+
+\subsubsection*{9.3.2 无折扣情形下的梯度推导}
+
+下面展示在无折扣情形（$\gamma = 1$）下如何计算指标的梯度。虽然本书此前一直只考虑折扣情形，但平均奖励 $\bar{r}_\pi$ 的定义对折扣和非折扣情形都有效。折扣情形下 $\bar{r}_\pi$ 的梯度是一个近似，而无折扣情形下的梯度则更为优美。
+
+\subsubsection*{状态价值与 Poisson 方程}
+
+在无折扣情形下，需要重新定义状态和动作价值。由于奖励的无折扣和 $\mathbb{E}[R_{t+1} + R_{t+2} + R_{t+3} + \dots \mid S_t = s]$ 可能发散，状态和动作价值以一种特殊方式定义：
+\begin{align*}
+v_\pi(s) &:= \mathbb{E}\bigl[ (R_{t+1} - \bar{r}_\pi) + (R_{t+2} - \bar{r}_\pi) + (R_{t+3} - \bar{r}_\pi) + \dots \mid S_t = s \bigr], \\
+q_\pi(s,a) &:= \mathbb{E}\bigl[ (R_{t+1} - \bar{r}_\pi) + (R_{t+2} - \bar{r}_\pi) + (R_{t+3} - \bar{r}_\pi) + \dots \mid S_t = s, A_t = a \bigr];
+\end{align*}
+其中 $\bar{r}_\pi$ 是平均奖励，在给定 $\pi$ 时确定。文献中 $v_\pi(s)$ 有不同的名称，如差分奖励（differential reward）或偏差（bias）。可以验证上述定义的状态价值满足以下类似贝尔曼方程的方程：
+\[
+v_\pi(s) = \sum_{a} \pi(a|s, \boldsymbol{\theta}) \left[ \sum_{r} p(r|s,a) (r - \bar{r}_\pi) + \sum_{s'} p(s'|s,a) \, v_\pi(s') \right].
+\]
+
+由于 $v_\pi(s) = \sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a)$，有
+$q_\pi(s,a) = \sum_{r} p(r|s,a) (r - \bar{r}_\pi) + \sum_{s'} p(s'|s,a) \, v_\pi(s')$。该方程的矩阵-向量形式为：
+\begin{equation}
+\boldsymbol{v}_\pi = \boldsymbol{r}_\pi - \bar{r}_\pi \boldsymbol{1}_n + \boldsymbol{P}_\pi \boldsymbol{v}_\pi; \label{eq:poisson}
+\end{equation}
+其中 $\boldsymbol{1}_n = [1, \dots, 1]^T \in \mathbb{R}^n$。方程 \eqref{eq:poisson} 类似贝尔曼方程，有一个特定的名称叫做\textbf{Poisson 方程}。
+
+如何从 Poisson 方程中解出 $\boldsymbol{v}_\pi$？答案在以下定理中给出。
+
+\begin{theorembox}[9.4 Poisson 方程的解]
+    令
+    \[
+    \boldsymbol{v}_\pi^* = (\boldsymbol{I}_n - \boldsymbol{P}_\pi + \boldsymbol{1}_n \boldsymbol{d}_\pi^T)^{-1} \boldsymbol{r}_\pi.
+    \]
+    则 $\boldsymbol{v}_\pi^*$ 是 Poisson 方程 \eqref{eq:poisson} 的一个解。此外，Poisson 方程的任意解都具有以下形式：
+    \[
+    \boldsymbol{v}_\pi = \boldsymbol{v}_\pi^* + c \boldsymbol{1}_n;
+    \]
+    其中 $c \in \mathbb{R}$。
+\end{theorembox}
+
+该定理表明 Poisson 方程的解可能不唯一。
+
+\begin{proofbox}
+我们分三步证明。
+\bigskip
+
+\noindent\textbf{步骤 1：}证明 $\boldsymbol{v}_\pi^*$ 是 Poisson 方程的一个解。
+
+为简单起见，令 $\boldsymbol{A} := \boldsymbol{I}_n - \boldsymbol{P}_\pi + \boldsymbol{1}_n \boldsymbol{d}_\pi^T$。则 $\boldsymbol{v}_\pi^* = \boldsymbol{A}^{-1} \boldsymbol{r}_\pi$。$\boldsymbol{A}$ 的可逆性将在步骤 3 中证明。将 $\boldsymbol{v}_\pi^* = \boldsymbol{A}^{-1} \boldsymbol{r}_\pi$ 代入 \eqref{eq:poisson} 得：
+\[
+\boldsymbol{A}^{-1} \boldsymbol{r}_\pi = \boldsymbol{r}_\pi - \boldsymbol{1}_n \boldsymbol{d}_\pi^T \boldsymbol{r}_\pi + \boldsymbol{P}_\pi \boldsymbol{A}^{-1} \boldsymbol{r}_\pi.
+\]
+整理得 $(-\boldsymbol{A}^{-1} + \boldsymbol{I}_n - \boldsymbol{1}_n \boldsymbol{d}_\pi^T + \boldsymbol{P}_\pi \boldsymbol{A}^{-1}) \boldsymbol{r}_\pi = 0$，即 $(-\boldsymbol{I}_n + \boldsymbol{A}^{-1} \boldsymbol{1}_n \boldsymbol{d}_\pi^T \boldsymbol{A} + \boldsymbol{P}_\pi) \boldsymbol{A}^{-1} \boldsymbol{r}_\pi = 0$。
+由于 $-\boldsymbol{I}_n + \boldsymbol{A}^{-1} \boldsymbol{1}_n \boldsymbol{d}_\pi^T (\boldsymbol{I}_n - \boldsymbol{P}_\pi + \boldsymbol{1}_n \boldsymbol{d}_\pi^T) + \boldsymbol{P}_\pi = \boldsymbol{0}$，得证。
+
+\noindent\textbf{步骤 2：}解的通用表达式。
+
+将 $\bar{r}_\pi = \boldsymbol{d}_\pi^T \boldsymbol{r}_\pi$ 代入 \eqref{eq:poisson} 得：
+\[
+\boldsymbol{v}_\pi = \boldsymbol{r}_\pi - \boldsymbol{1}_n \boldsymbol{d}_\pi^T \boldsymbol{r}_\pi + \boldsymbol{P}_\pi \boldsymbol{v}_\pi,
+\]
+因此：
+\[
+(\boldsymbol{I}_n - \boldsymbol{P}_\pi) \boldsymbol{v}_\pi = (\boldsymbol{I}_n - \boldsymbol{1}_n \boldsymbol{d}_\pi^T) \boldsymbol{r}_\pi.
+\]
+
+注意到 $\boldsymbol{I}_n - \boldsymbol{P}_\pi$ 是奇异的，因为 $(\boldsymbol{I}_n - \boldsymbol{P}_\pi) \boldsymbol{1}_n = 0$。因此解不唯一：若 $\boldsymbol{v}_\pi^*$ 是一个解，则 $\boldsymbol{v}_\pi^* + \boldsymbol{x}$ 对任意 $\boldsymbol{x} \in \text{Null}(\boldsymbol{I}_n - \boldsymbol{P}_\pi)$ 也是一个解。当 $\boldsymbol{P}_\pi$ 不可约时，$\text{Null}(\boldsymbol{I}_n - \boldsymbol{P}_\pi) = \text{span}\{\boldsymbol{1}_n\}$。因此 Poisson 方程的任意解具有 $\boldsymbol{v}_\pi^* + c \boldsymbol{1}_n$ 的形式，其中 $c \in \mathbb{R}$。
+
+\noindent\textbf{步骤 3：}证明 $\boldsymbol{A} = \boldsymbol{I}_n - \boldsymbol{P}_\pi + \boldsymbol{1}_n \boldsymbol{d}_\pi^T$ 可逆。
+
+首先给出一些基本事实（不在此处证明）。设 $\rho(\boldsymbol{M})$ 是矩阵 $\boldsymbol{M}$ 的谱半径。则 $\boldsymbol{I} - \boldsymbol{M}$ 可逆当且仅当 $\rho(\boldsymbol{M}) < 1$。此外，$\rho(\boldsymbol{M}) < 1$ 当且仅当 $\lim_{k \to \infty} \boldsymbol{M}^k = 0$。
+
+基于以上事实，下面证明 $\lim_{k \to \infty} (\boldsymbol{P}_\pi - \boldsymbol{1}_n \boldsymbol{d}_\pi^T)^k \to 0$。注意到：
+\[
+(\boldsymbol{P}_\pi - \boldsymbol{1}_n \boldsymbol{d}_\pi^T)^k = \boldsymbol{P}_\pi^k - \boldsymbol{1}_n \boldsymbol{d}_\pi^T, \quad k \geq 1;
+\]
+这可以通过归纳法证明。由于 $d_\pi$ 是状态的平稳分布，有 $\lim_{k \to \infty} \boldsymbol{P}_\pi^k = \boldsymbol{1}_n \boldsymbol{d}_\pi^T$。因此：
+\[
+\lim_{k \to \infty} (\boldsymbol{P}_\pi - \boldsymbol{1}_n \boldsymbol{d}_\pi^T)^k = \lim_{k \to \infty} \boldsymbol{P}_\pi^k - \boldsymbol{1}_n \boldsymbol{d}_\pi^T = 0.
+\]
+因此 $\rho(\boldsymbol{P}_\pi - \boldsymbol{1}_n \boldsymbol{d}_\pi^T) < 1$，$\boldsymbol{I}_n - (\boldsymbol{P}_\pi - \boldsymbol{1}_n \boldsymbol{d}_\pi^T)$ 可逆，且其逆为：
+\[
+(\boldsymbol{I}_n - (\boldsymbol{P}_\pi - \boldsymbol{1}_n \boldsymbol{d}_\pi^T))^{-1} = \sum_{k=0}^{\infty} (\boldsymbol{P}_\pi - \boldsymbol{1}_n \boldsymbol{d}_\pi^T)^k
+= \boldsymbol{I}_n + \sum_{k=1}^{\infty} (\boldsymbol{P}_\pi^k - \boldsymbol{1}_n \boldsymbol{d}_\pi^T).
+\]
+\end{proofbox}
+
+\subsubsection*{梯度的推导}
+
+虽然如定理 9.4 所示 $\boldsymbol{v}_\pi$ 在无折扣情形下不唯一，但 $\bar{r}_\pi$ 的值是唯一的。具体而言，由 Poisson 方程：
+\[
+\bar{r}_\pi \boldsymbol{1}_n = \boldsymbol{r}_\pi + (\boldsymbol{P}_\pi - \boldsymbol{I}_n) \boldsymbol{v}_\pi
+= \boldsymbol{r}_\pi + (\boldsymbol{P}_\pi - \boldsymbol{I}_n)(\boldsymbol{v}_\pi^* + c \boldsymbol{1}_n)
+= \boldsymbol{r}_\pi + (\boldsymbol{P}_\pi - \boldsymbol{I}_n) \boldsymbol{v}_\pi^*.
+\]
+值得注意的是，未定值 $c$ 被消去了，因此 $\bar{r}_\pi$ 是唯一的。因此可以计算无折扣情形下 $\bar{r}_\pi$ 的梯度。
+
+\begin{theorembox}[9.5 无折扣情形下 $\bar{r}_\pi$ 的梯度]
+    在无折扣情形下，平均奖励 $\bar{r}_\pi$ 的梯度为：
+    \begin{align*}
+    \nabla_{\boldsymbol{\theta}} \bar{r}_\pi &= \sum_{s \in \mathcal{S}} d_\pi(s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a) \\
+    &= \mathbb{E}\bigl[ \nabla_{\boldsymbol{\theta}} \ln \pi(A|S, \boldsymbol{\theta}) \, q_\pi(S, A) \bigr];
+    \end{align*}
+    其中 $S \sim d_\pi$，$A \sim \pi(S, \boldsymbol{\theta})$。
+\end{theorembox}
+
+与定理 9.3 所示的折扣情形相比，无折扣情形下 $\bar{r}_\pi$ 的梯度更为优美，因为上式是严格成立的，且 $S$ 服从平稳分布。
+
+\begin{proofbox}
+首先，由 $v_\pi(s) = \sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a)$：
+\begin{align*}
+\nabla_{\boldsymbol{\theta}} v_\pi(s) &= \nabla_{\boldsymbol{\theta}} \left[ \sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a) \right] \\
+&= \sum_{a \in \mathcal{A}} \bigl[ \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a) + \pi(a|s, \boldsymbol{\theta}) \, \nabla_{\boldsymbol{\theta}} q_\pi(s,a) \bigr];
+\end{align*}
+其中动作价值满足：
+\[
+q_\pi(s,a) = \sum_{r} p(r|s,a) (r - \bar{r}_\pi) + \sum_{s'} p(s'|s,a) \, v_\pi(s')
+= r(s,a) - \bar{r}_\pi + \sum_{s'} p(s'|s,a) \, v_\pi(s').
+\]
+由于 $r(s,a) = \sum_{r} r \, p(r|s,a)$ 独立于 $\boldsymbol{\theta}$，有：
+\[
+\nabla_{\boldsymbol{\theta}} q_\pi(s,a) = 0 - \nabla_{\boldsymbol{\theta}} \bar{r}_\pi + \sum_{s' \in \mathcal{S}} p(s'|s,a) \, \nabla_{\boldsymbol{\theta}} v_\pi(s').
+\]
+代入得：
+\[
+\nabla_{\boldsymbol{\theta}} v_\pi(s) = \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a) - \nabla_{\boldsymbol{\theta}} \bar{r}_\pi + \sum_{a \in \mathcal{A}} \pi(a|s, \boldsymbol{\theta}) \sum_{s' \in \mathcal{S}} p(s'|s,a) \, \nabla_{\boldsymbol{\theta}} v_\pi(s').
+\]
+
+令 $\boldsymbol{u}(s) := \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a)$。上式可以写成矩阵-向量形式：
+\[
+\nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi = \boldsymbol{u} - \boldsymbol{1}_n \otimes \nabla_{\boldsymbol{\theta}} \bar{r}_\pi + (\boldsymbol{P}_\pi \otimes \boldsymbol{I}_m) \nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi;
+\]
+其中 $n = |\mathcal{S}|$，$m$ 是 $\boldsymbol{\theta}$ 的维数，$\otimes$ 是 Kronecker 积。整理得：
+\[
+\boldsymbol{1}_n \otimes \nabla_{\boldsymbol{\theta}} \bar{r}_\pi = \boldsymbol{u} + (\boldsymbol{P}_\pi \otimes \boldsymbol{I}_m) \nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi - \nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi.
+\]
+两边左乘 $\boldsymbol{d}_\pi^T \otimes \boldsymbol{I}_m$：
+\begin{align*}
+(\boldsymbol{d}_\pi^T \boldsymbol{1}_n) \otimes \nabla_{\boldsymbol{\theta}} \bar{r}_\pi
+&= (\boldsymbol{d}_\pi^T \otimes \boldsymbol{I}_m) \boldsymbol{u} + (\boldsymbol{d}_\pi^T \boldsymbol{P}_\pi \otimes \boldsymbol{I}_m) \nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi - (\boldsymbol{d}_\pi^T \otimes \boldsymbol{I}_m) \nabla_{\boldsymbol{\theta}} \boldsymbol{v}_\pi \\
+&= (\boldsymbol{d}_\pi^T \otimes \boldsymbol{I}_m) \boldsymbol{u}.
+\end{align*}
+这推出：
+\[
+\nabla_{\boldsymbol{\theta}} \bar{r}_\pi = (\boldsymbol{d}_\pi^T \otimes \boldsymbol{I}_m) \boldsymbol{u}
+= \sum_{s \in \mathcal{S}} d_\pi(s) \boldsymbol{u}(s)
+= \sum_{s \in \mathcal{S}} d_\pi(s) \sum_{a \in \mathcal{A}} \nabla_{\boldsymbol{\theta}} \pi(a|s, \boldsymbol{\theta}) \, q_\pi(s,a).
+\]
+证明完毕。
+\end{proofbox}
+
+\subsection*{9.4 蒙特卡洛策略梯度（REINFORCE）}
+
+有了定理 9.1 给出的梯度，下面展示如何使用基于梯度的方法优化指标以获得最优策略。
+
+最大化 $J(\boldsymbol{\theta})$ 的梯度上升算法为：
+\begin{align}
+\boldsymbol{\theta}_{t+1} &= \boldsymbol{\theta}_t + \alpha \, \nabla_{\boldsymbol{\theta}} J(\boldsymbol{\theta}_t) \nonumber \\
+&= \boldsymbol{\theta}_t + \alpha \, \mathbb{E}\bigl[ \nabla_{\boldsymbol{\theta}} \ln \pi(A|S, \boldsymbol{\theta}_t) \, q_\pi(S, A) \bigr]; \label{eq:grad_ascent}
+\end{align}
+其中 $\alpha > 0$ 是常学习率。由于 \eqref{eq:grad_ascent} 中的真实梯度未知，可以用随机梯度替代真实梯度，得到以下算法：
+\begin{equation}
+\boldsymbol{\theta}_{t+1} = \boldsymbol{\theta}_t + \alpha \, \nabla_{\boldsymbol{\theta}} \ln \pi(a_t|s_t, \boldsymbol{\theta}_t) \, q_t(s_t, a_t); \label{eq:reinforce}
+\end{equation}
+其中 $q_t(s_t, a_t)$ 是 $q_\pi(s_t, a_t)$ 的一个近似。若 $q_t(s_t, a_t)$ 通过蒙特卡洛估计获得，则该算法称为\textbf{REINFORCE}或\textbf{蒙特卡洛策略梯度}，是最早也是最简单的策略梯度算法之一。
+
+\eqref{eq:reinforce} 中的算法非常重要，因为许多其他策略梯度算法都可以通过扩展该算法得到。下面更仔细地考察 \eqref{eq:reinforce} 的解释。
+
+由于 $\nabla_{\boldsymbol{\theta}} \ln \pi(a_t|s_t, \boldsymbol{\theta}_t) = \frac{\nabla_{\boldsymbol{\theta}} \pi(a_t|s_t, \boldsymbol{\theta}_t)}{\pi(a_t|s_t, \boldsymbol{\theta}_t)}$，可以将 \eqref{eq:reinforce} 改写为：
+\[
+\boldsymbol{\theta}_{t+1} = \boldsymbol{\theta}_t + \alpha \; \underbrace{\left( \frac{q_t(s_t, a_t)}{\pi(a_t|s_t, \boldsymbol{\theta}_t)} \right)}_{\beta_t} \nabla_{\boldsymbol{\theta}} \pi(a_t|s_t, \boldsymbol{\theta}_t);
+\]
+可进一步简写为：
+\begin{equation}
+\boldsymbol{\theta}_{t+1} = \boldsymbol{\theta}_t + \alpha \, \beta_t \, \nabla_{\boldsymbol{\theta}} \pi(a_t|s_t, \boldsymbol{\theta}_t). \label{eq:reinforce_compact}
+\end{equation}
+
+从该方程可以看出两个重要的解释。
+
+\begin{itemize}
+    \item \textbf{第一，}由于 \eqref{eq:reinforce_compact} 是一个简单的梯度上升算法，可以得到以下观察：
+    \begin{itemize}
+        \item 若 $\beta_t \geq 0$，则选择 $(s_t, a_t)$ 的概率被增强。即：
+        \[
+        \pi(a_t|s_t, \boldsymbol{\theta}_{t+1}) \geq \pi(a_t|s_t, \boldsymbol{\theta}_t).
+        \]
+        $\beta_t$ 越大，增强效果越强。
+        \item 若 $\beta_t < 0$，则选择 $(s_t, a_t)$ 的概率减小。即：
+        \[
+        \pi(a_t|s_t, \boldsymbol{\theta}_{t+1}) < \pi(a_t|s_t, \boldsymbol{\theta}_t).
+        \]
+    \end{itemize}
+    上述观察的证明如下。当 $\boldsymbol{\theta}_{t+1} - \boldsymbol{\theta}_t$ 足够小时，由 Taylor 展开：
+    \begin{align*}
+    \pi(a_t|s_t, \boldsymbol{\theta}_{t+1})
+    &\approx \pi(a_t|s_t, \boldsymbol{\theta}_t) + (\nabla_{\boldsymbol{\theta}} \pi(a_t|s_t, \boldsymbol{\theta}_t))^T (\boldsymbol{\theta}_{t+1} - \boldsymbol{\theta}_t) \\
+    &= \pi(a_t|s_t, \boldsymbol{\theta}_t) + \alpha \beta_t \, (\nabla_{\boldsymbol{\theta}} \pi(a_t|s_t, \boldsymbol{\theta}_t))^T (\nabla_{\boldsymbol{\theta}} \pi(a_t|s_t, \boldsymbol{\theta}_t)) \\
+    &= \pi(a_t|s_t, \boldsymbol{\theta}_t) + \alpha \beta_t \, \| \nabla_{\boldsymbol{\theta}} \pi(a_t|s_t, \boldsymbol{\theta}_t) \|_2^2.
+    \end{align*}
+    显然，当 $\beta_t \geq 0$ 时 $\pi(a_t|s_t, \boldsymbol{\theta}_{t+1}) \geq \pi(a_t|s_t, \boldsymbol{\theta}_t)$，当 $\beta_t < 0$ 时 $\pi(a_t|s_t, \boldsymbol{\theta}_{t+1}) < \pi(a_t|s_t, \boldsymbol{\theta}_t)$。
+
+    \item \textbf{第二，}由于 $\beta_t = \frac{q_t(s_t, a_t)}{\pi(a_t|s_t, \boldsymbol{\theta}_t)}$ 的表达式，该算法可以在一定程度上平衡探索与利用：
+    \begin{itemize}
+        \item $\beta_t$ 与 $q_t(s_t, a_t)$ 成正比。因此，若 $(s_t, a_t)$ 的动作价值大，则 $\pi(a_t|s_t, \boldsymbol{\theta}_t)$ 被增强，使得选择 $a_t$ 的概率增加。因此，该算法试图\textbf{利用}价值更大的动作。
+        \item 当 $q_t(s_t, a_t) > 0$ 时，$\beta_t$ 与 $\pi(a_t|s_t, \boldsymbol{\theta}_t)$ 成反比。因此，若选择 $a_t$ 的概率小，则 $\pi(a_t|s_t, \boldsymbol{\theta}_t)$ 被增强，使得选择 $a_t$ 的概率增加。因此，该算法试图\textbf{探索}概率较低的动作。
+    \end{itemize}
+\end{itemize}
+
+此外，由于 \eqref{eq:reinforce} 使用样本来近似 \eqref{eq:grad_ascent} 中的真实梯度，理解应如何获取样本非常重要。
+
+\begin{itemize}
+    \item \textbf{如何采样 $S$？}在真实梯度 $\mathbb{E}[\nabla_{\boldsymbol{\theta}} \ln \pi(A|S, \boldsymbol{\theta}_t) \, q_\pi(S, A)]$ 中的 $S$ 应服从分布 $\eta$，该分布要么是平稳分布 $d_\pi$，要么是 \eqref{eq:pg_2} 中的折扣总概率分布 $\eta_\pi$。$d_\pi$ 和 $\eta_\pi$ 都代表了在 $\pi$ 下表现出的长期行为。
+    \item \textbf{如何采样 $A$？}在 $\mathbb{E}[\nabla_{\boldsymbol{\theta}} \ln \pi(A|S, \boldsymbol{\theta}_t) \, q_\pi(S, A)]$ 中的 $A$ 应服从 $\pi(A|S, \boldsymbol{\theta})$ 的分布。理想的采样 $A$ 的方法是按照 $\pi(a_t|s_t, \boldsymbol{\theta}_t)$ 选择 $a_t$。因此，策略梯度算法是\textbf{同策略（on-policy）}的。
+\end{itemize}
+
+不幸的是，由于样本利用效率低，在实践中并未严格遵循 $S$ 和 $A$ 采样的理想方式。一个样本效率更高的 \eqref{eq:reinforce} 实现如算法 9.1 所示。在该实现中，首先生成一个遵循 $\pi(\boldsymbol{\theta})$ 的回合，然后利用该回合中的每个经验样本多次更新 $\boldsymbol{\theta}$。
+
+\begin{definitionbox}
+\noindent\textbf{算法 9.1：蒙特卡洛策略梯度（REINFORCE）}
+
+\noindent\textbf{初始化：}初始参数 $\boldsymbol{\theta}$；$\gamma \in (0,1)$；$\alpha > 0$。
+
+\noindent\textbf{目标：}学习最优策略以最大化 $J(\boldsymbol{\theta})$。
+
+对每个回合，执行：
+
+生成一个回合 $\{s_0, a_0, r_1, \dots, s_{T-1}, a_{T-1}, r_T\}$ 遵循 $\pi(\boldsymbol{\theta})$。
+
+对 $t = 0, 1, \dots, T-1$：
+
+\noindent\quad 价值更新：$q_t(s_t, a_t) = \sum_{k=t+1}^{T} \gamma^{k-t-1} r_k$
+
+\noindent\quad 策略更新：$\boldsymbol{\theta} \gets \boldsymbol{\theta} + \alpha \, \nabla_{\boldsymbol{\theta}} \ln \pi(a_t|s_t, \boldsymbol{\theta}) \, q_t(s_t, a_t)$
+\end{definitionbox}
+
+\subsection*{9.5 本章小结}
+
+本章介绍了策略梯度方法，它是许多现代强化学习算法的基础。策略梯度方法是\textbf{基于策略的（policy-based）}方法。这是本书的一大进步，因为此前所有章节的方法都是\textbf{基于价值的（value-based）}方法。策略梯度方法的基本思想很简单：选择一个合适的标量指标，然后通过梯度上升算法优化它。
+
+策略梯度方法最复杂的部分是指标梯度的推导。这是因为我们必须区分各种不同指标和折扣/非折扣情形下的不同场景。幸运的是，不同场景下的梯度表达式是相似的。因此，我们将这些表达式总结在\textbf{定理 9.1（策略梯度定理）}中，这是本章最重要的理论结果。对大多数读者来说，了解该定理就足够了。其证明较为复杂，并非要求所有读者都学习。
+
+\begin{remarkbox}
+\eqref{eq:reinforce} 中的策略梯度算法必须被正确理解，因为它是许多高级策略梯度算法的基础。在下一章中，该算法将被扩展为另一种重要的策略梯度方法——\textbf{Actor-Critic}。
+\end{remarkbox}
+
+\subsection*{9.6 常见问题解答}
+
+\begin{itemize}
+    \item \textbf{Q：策略梯度方法的基本思想是什么？}
+
+    A：基本思想很简单。即定义一个合适的标量指标，推导其梯度，然后使用梯度上升方法优化该指标。关于该方法最重要的理论结果是定理 9.1 中给出的策略梯度。
+
+    \item \textbf{Q：策略梯度方法最复杂的部分是什么？}
+
+    A：策略梯度方法的基本思想很简单，但梯度的推导过程相当复杂。这是因为我们必须区分许多不同的场景。每个场景下的数学推导过程都不简单。对大多数读者来说，熟悉定理 9.1 的结果就足够了，无需了解其证明。
+
+    \item \textbf{Q：策略梯度方法中应该使用什么指标？}
+
+    A：本章介绍了三种常见指标：$\bar{v}_\pi$、$\bar{v}_\pi^0$ 和 $\bar{r}_\pi$。由于它们都导致相似的策略梯度，因此都可以在策略梯度方法中采用。更重要的是，\eqref{eq:J_discounted} 和 \eqref{eq:J_undiscounted} 中的表达式在文献中经常出现。
+
+    \item \textbf{Q：为什么策略梯度中包含自然对数函数？}
+
+    A：引入自然对数函数是为了将梯度表示为期望值的形式。这样，我们可以用随机梯度来近似真实梯度。
+
+    \item \textbf{Q：为什么在推导策略梯度时需要研究无折扣情形？}
+
+    A：平均奖励 $\bar{r}_\pi$ 的定义对折扣和无折扣情形都有效。折扣情形下 $\bar{r}_\pi$ 的梯度是一个近似，而无折扣情形下的梯度更为优美——它是严格成立的，且状态服从平稳分布。
+
+    \item \textbf{Q：\eqref{eq:reinforce} 中的策略梯度算法在数学上做了什么？}
+
+    A：为了更好地理解该算法，建议读者考察其紧凑形式 \eqref{eq:reinforce_compact}。该式清楚地表明它是一个用于更新 $\pi(a_t|s_t, \boldsymbol{\theta}_t)$ 值的梯度上升算法。即当有一个样本 $(s_t, a_t)$ 时，策略可以被更新，使得 $\pi(a_t|s_t, \boldsymbol{\theta}_{t+1}) \geq \pi(a_t|s_t, \boldsymbol{\theta}_t)$ 或 $\pi(a_t|s_t, \boldsymbol{\theta}_{t+1}) < \pi(a_t|s_t, \boldsymbol{\theta}_t)$，具体取决于系数 $\beta_t$ 的符号。
+
+    \item \textbf{Q：策略梯度方法与基于价值的方法相比有什么优势？}
+
+    A：策略梯度方法在以下方面具有优势：(1) 它可以直接处理连续动作空间；(2) 它可以学习随机策略，这在某些博弈场景中至关重要；(3) 它在处理大状态/动作空间时效率更高，具有更强的泛化能力和样本利用效率；(4) 策略的参数化使得先验知识的融入更加自然。
+
+    \item \textbf{Q：什么是 REINFORCE 算法？}
+
+    A：REINFORCE 是最早也是最简单的策略梯度算法之一。它使用蒙特卡洛方法来估计 $q_t(s_t, a_t)$，即用完整的回报 $G_t = \sum_{k=t+1}^{T} \gamma^{k-t-1} r_k$ 来近似动作价值，然后沿着 $\nabla_{\boldsymbol{\theta}} \ln \pi(a_t|s_t, \boldsymbol{\theta}_t) \, G_t$ 的方向更新策略参数。
+
+    \item \textbf{Q：为什么策略梯度算法是在策略的？}
+
+    A：因为在计算梯度时，动作 $A$ 必须服从策略 $\pi(\cdot|S, \boldsymbol{\theta})$ 的分布进行采样，即智能体只能使用自己当前策略产生的数据来更新策略，这就是在策略学习的本质。
+\end{itemize}
+
+\end{document}

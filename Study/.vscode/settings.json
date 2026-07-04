@@ -1,0 +1,50 @@
+{
+    "latex-workshop.latex.tools": [
+        {
+            "name": "xelatex",
+            "command": "xelatex",
+            "args": [
+                "-synctex=1",
+                "-interaction=nonstopmode",
+                "-file-line-error",
+                "-output-directory=%OUTDIR%",
+                "%DOC%"
+            ]
+        },
+        {
+            "name": "latexmk",
+            "command": "latexmk",
+            "args": [
+                "-synctex=1",
+                "-interaction=nonstopmode",
+                "-file-line-error",
+                "-xelatex",
+                "-outdir=%OUTDIR%",
+                "%DOC%"
+            ]
+        },
+        {
+            "name": "bibtex",
+            "command": "bibtex",
+            "args": ["%DOCFILE%"]
+        }
+    ],
+    "latex-workshop.latex.recipes": [
+        { "name": "latexmk (xelatex)", "tools": ["latexmk"] },
+        { "name": "xelatex → bibtex → xelatex × 2", "tools": ["xelatex", "bibtex", "xelatex", "xelatex"] }
+    ],
+    // 输出目录与现有 settings.json 保持一致
+    "latex-workshop.latex.outDir": "%DIR%/build",
+    // 格式化
+    "latex-workshop.formatting.latex": "latexindent",
+    // 语法检查
+    "latex-workshop.linting.chktex.enabled": true,
+    "latex-workshop.linting.chktex.exec.args": ["-wall", "-n22", "-n30", "-n38", "-q"],
+    // SyncTeX 跳转
+    "latex-workshop.view.pdf.internal.synctex.keybinding": "ctrl-click",
+    // 悬停预览
+    "latex-workshop.hover.preview.enabled": true,
+    // 自动补全
+    "latex-workshop.intellisense.citation.enabled": true,
+    "latex-workshop.intellisense.label.enabled": true
+}

@@ -1,0 +1,36 @@
+# LaTeX 辅助文件
+*.aux
+*.bbl
+*.blg
+*.idx
+*.ind
+*.lof
+*.lot
+*.out
+*.toc
+*.acn
+*.acr
+*.alg
+*.glg
+*.glo
+*.gls
+*.fls
+*.fdb_latexmk
+*.snm
+*.nav
+*.vrb
+*.synctex.gz
+*.thm
+*.log
+*.xdv
+*.run.xml
+*.bcf
+*.loa
+*.lol
+*.ilg
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db

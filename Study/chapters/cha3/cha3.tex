@@ -1,0 +1,581 @@
+\documentclass[UTF8]{article}
+% ========== 基础宏包 ==========
+\usepackage{ctex}                % 中文支持
+\usepackage{amsmath,amssymb}     % 数学公式
+\usepackage{geometry}            % 页面边距
+\usepackage{titlesec}            % 自定义标题格式
+\usepackage{enumitem}            % 列表格式控制
+\usepackage{microtype}           % 微排版优化
+\usepackage{xcolor}              % 颜色支持
+\usepackage{tcolorbox}           % 彩色盒子
+\tcbuselibrary{most}             % 加载 tcolorbox 扩展库
+
+% ========== 页面设置 ==========
+\geometry{a4paper, margin=2.5cm}
+\linespread{1.2}                 % 1.2倍行距
+\setlength{\parskip}{0.5ex}      % 段落间距
+
+% ========== 标题格式 ==========
+\titleformat{\section}{\Large\bfseries\centering}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{0.8em}{}
+
+% ========== 列表环境（紧凑排版） ==========
+\setlist[itemize]{leftmargin=*, nosep, topsep=0.3ex, parsep=0ex, partopsep=0ex}
+\setlist[enumerate]{leftmargin=*, nosep, topsep=0.3ex, parsep=0ex, partopsep=0ex}
+
+% ========== 彩色模块定义 ==========
+% 定义环境：蓝色
+\newtcolorbox{definitionbox}{
+    colback=blue!5!white,
+    colframe=blue!70!black,
+    title=定义,
+    fonttitle=\bfseries\normalsize,
+    arc=2pt,
+    boxrule=0.8pt,
+    left=3mm, right=3mm, top=2mm, bottom=2mm
+}
+
+% 定理环境：橙色（支持编号）
+\newtcolorbox{theorembox}[1][]{
+    colback=orange!5!white,
+    colframe=orange!70!black,
+    title=定理 #1,
+    fonttitle=\bfseries\normalsize,
+    arc=2pt,
+    boxrule=0.8pt,
+    left=3mm, right=3mm, top=2mm, bottom=2mm
+}
+
+% 证明环境：绿色，支持跨页
+\newtcolorbox{proofbox}{
+    colback=green!5!white,
+    colframe=green!70!black,
+    title=证明,
+    fonttitle=\bfseries\normalsize,
+    breakable,
+    arc=2pt,
+    boxrule=0.8pt,
+    left=3mm, right=3mm, top=2mm, bottom=2mm
+}
+
+% 备注环境：紫色
+\newtcolorbox{remarkbox}{
+    colback=purple!5!white,
+    colframe=purple!70!black,
+    title=备注,
+    fonttitle=\bfseries\normalsize,
+    arc=2pt,
+    boxrule=0.8pt,
+    left=3mm, right=3mm, top=2mm, bottom=2mm
+}
+
+% ========== 文档信息 ==========
+\title{第3讲：最优状态价值与贝尔曼最优方程}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+% ============================================================
+\section*{第3讲：最优状态价值与贝尔曼最优方程}
+% ============================================================
+
+强化学习的最终目标是寻找最优策略，因此需要明确最优策略的严格定义。本章包含一个核心概念与一个核心工具：核心概念是\textbf{最优状态价值}，基于它可以定义最优策略；核心工具是\textbf{贝尔曼最优方程（Bellman Optimality Equation, BOE）}，通过求解该方程可以得到最优状态价值与最优策略。
+
+本章与前后章节的关联如下：第2讲介绍了任意给定策略对应的贝尔曼方程，本章介绍的贝尔曼最优方程是一类特殊的贝尔曼方程，其对应的策略为最优策略；第4讲将介绍的值迭代算法，正是求解贝尔曼最优方程的数值算法。
+
+\subsection*{3.1 动机示例：如何改进策略}
+
+我们通过一个简单的网格世界示例说明策略改进的基本思想。示例中橙色格子为禁区，蓝色格子为目标区域。给定一个初始策略，它在状态 $s_1$ 选择向右的动作 $a_2$，这并非最优选择。
+
+\textbf{直觉层面}：在状态 $s_1$ 选择向下的动作 $a_3$ 可以避免进入禁区，从而获得更高的长期回报，策略因此得到改进。
+
+\textbf{数学层面}：上述直觉可以通过计算状态价值与动作价值严格验证。
+
+首先计算给定策略 $\pi$ 下的状态价值，该策略对应的贝尔曼方程为：
+\[
+\begin{cases}
+v_\pi(s_1) = -1 + \gamma v_\pi(s_2) \\
+v_\pi(s_2) = 1 + \gamma v_\pi(s_4) \\
+v_\pi(s_3) = 1 + \gamma v_\pi(s_4) \\
+v_\pi(s_4) = 1 + \gamma v_\pi(s_4)
+\end{cases}
+\]
+
+取折扣因子 $\gamma=0.9$，可解得：
+\[
+v_\pi(s_4) = v_\pi(s_3) = v_\pi(s_2) = 10, \quad v_\pi(s_1) = 8
+\]
+
+接下来计算状态 $s_1$ 下所有动作对应的动作价值：
+\[
+\begin{aligned}
+q_\pi(s_1, a_1) &= -1 + \gamma v_\pi(s_1) = 6.2 \\
+q_\pi(s_1, a_2) &= -1 + \gamma v_\pi(s_2) = 8 \\
+q_\pi(s_1, a_3) &= 0 + \gamma v_\pi(s_3) = 9 \\
+q_\pi(s_1, a_4) &= -1 + \gamma v_\pi(s_1) = 6.2 \\
+q_\pi(s_1, a_5) &= 0 + \gamma v_\pi(s_1) = 7.2
+\end{aligned}
+\]
+
+可以看到动作 $a_3$ 对应的动作价值最大，满足：
+\[
+q_\pi(s_1, a_3) \geq q_\pi(s_1, a_i), \quad \forall i \neq 3
+\]
+
+因此，将策略更新为在 $s_1$ 处选择动作 $a_3$，即可得到更优的策略。
+
+该示例揭示了策略改进的基本思想：将策略更新为选择动作价值最大的动作，即可得到更优的策略。这也是绝大多数强化学习算法的核心思路。
+
+\subsection*{3.2 最优状态价值与最优策略}
+
+强化学习的最终目标是获得最优策略，而最优策略的定义基于状态价值。对于两个策略 $\pi_1$ 和 $\pi_2$，若对任意状态 $s \in \mathcal{S}$，都有 $v_{\pi_1}(s) \geq v_{\pi_2}(s)$，则称策略 $\pi_1$ 优于 $\pi_2$。进一步地，若一个策略优于所有其他可能的策略，则称其为最优策略。
+
+\begin{definitionbox}
+    \textbf{最优策略与最优状态价值}：若策略 $\pi^*$ 满足对任意状态 $s \in \mathcal{S}$ 以及任意其他策略 $\pi$，都有
+    \[
+    v_{\pi^*}(s) \geq v_\pi(s)
+    \]
+    则称 $\pi^*$ 为\textbf{最优策略}，其对应的状态价值 $v_{\pi^*}$ 称为\textbf{最优状态价值}，记为 $v^*$。
+\end{definitionbox}
+
+基于该定义，自然引出一系列基础问题：
+- 存在性：最优策略是否一定存在？
+- 唯一性：最优策略是否唯一？
+- 随机性：最优策略是随机策略还是确定性策略？
+- 算法：如何求解最优策略与最优状态价值？
+
+本章后续内容将逐一解答这些问题。
+
+\subsection*{3.3 贝尔曼最优方程}
+
+分析最优策略与最优状态价值的核心工具是\textbf{贝尔曼最优方程（BOE）}，求解该方程即可得到最优策略与最优状态价值。
+
+对任意状态 $s \in \mathcal{S}$，贝尔曼最优方程的元素形式为：
+\begin{equation}
+\label{eq:boe_element}
+\begin{aligned}
+v(s) &= \max_{\pi(s) \in \Pi(s)} \sum_{a \in \mathcal{A}} \pi(a \mid s) \left( \sum_{r \in \mathcal{R}} p(r \mid s, a) r + \gamma \sum_{s' \in \mathcal{S}} p(s' \mid s, a) v(s') \right) \\
+&= \max_{\pi(s) \in \Pi(s)} \sum_{a \in \mathcal{A}} \pi(a \mid s) q(s, a)
+\end{aligned}
+\end{equation}
+其中 $v(s), v(s')$ 是待求解的未知变量，动作价值函数定义为：
+\[
+q(s, a) \doteq \sum_{r \in \mathcal{R}} p(r \mid s, a) r + \gamma \sum_{s' \in \mathcal{S}} p(s' \mid s, a) v(s')
+\]
+式中 $\pi(s)$ 表示状态 $s$ 处的策略，$\Pi(s)$ 表示状态 $s$ 处所有可能策略构成的集合。
+
+贝尔曼最优方程是一个非线性方程，围绕它需要解答以下核心问题：解的存在性、解的唯一性、求解算法、解与最优策略的对应关系。
+
+\subsubsection*{3.3.1 方程右端的最大化问题}
+
+贝尔曼最优方程看似包含 $v(s)$ 和 $\pi(a \mid s)$ 两个未知变量，但二者可以分步求解：先固定 $v(s)$，求解右端最大化问题得到最优策略；再代入方程求解最优价值。
+
+我们通过一个简单例子理解该思路：给定 $q_1, q_2, q_3 \in \mathbb{R}$，寻找非负系数 $c_1, c_2, c_3$ 满足 $c_1+c_2+c_3=1$，使得 $\sum_{i=1}^3 c_i q_i$ 最大。不妨设 $q_3 \geq q_1, q_2$，则最优解为 $c_3^*=1$，$c_1^*=c_2^*=0$。
+
+将该结论推广到策略最大化问题：由于 $\sum_{a \in \mathcal{A}} \pi(a \mid s) = 1$ 且 $\pi(a \mid s) \geq 0$，加权和 $\sum_{a \in \mathcal{A}} \pi(a \mid s) q(s, a)$ 的最大值等于最大的动作价值，即
+\[
+\max_{\pi(s)} \sum_{a \in \mathcal{A}} \pi(a \mid s) q(s, a) = \max_{a \in \mathcal{A}} q(s, a)
+\]
+等号成立当且仅当策略将全部概率赋予动作价值最大的动作：
+\[
+\pi(a \mid s) =
+\begin{cases}
+1, & a = a^* \\
+0, & a \neq a^*
+\end{cases}
+\]
+其中 $a^* = \arg\max_{a} q(s, a)$。
+
+由此得到重要结论：\textbf{最优策略是确定性的贪心策略，在每个状态选择动作价值最大的动作}。
+
+\subsubsection*{3.3.2 矩阵-向量形式}
+
+贝尔曼最优方程是定义在所有状态上的方程组，可整理为紧凑的矩阵-向量形式：
+\begin{equation}
+\label{eq:boe_matrix}
+\boldsymbol{v} = \max_{\pi \in \Pi} \left( \boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v} \right)
+\end{equation}
+其中 $\boldsymbol{v} \in \mathbb{R}^{|\mathcal{S}|}$ 为状态价值向量，$\max_\pi$ 表示按元素逐个取最大值。$\boldsymbol{r}_\pi$ 和 $\boldsymbol{P}_\pi$ 与普通贝尔曼方程中的定义一致：
+- $[\boldsymbol{r}_\pi]_s = \sum_{a \in \mathcal{A}} \pi(a \mid s) \sum_{r \in \mathcal{R}} p(r \mid s, a) r$
+- $[\boldsymbol{P}_\pi]_{s,s'} = \sum_{a \in \mathcal{A}} \pi(a \mid s) p(s' \mid s, a)$
+
+由于最优策略由价值 $\boldsymbol{v}$ 决定，方程右端是关于 $\boldsymbol{v}$ 的函数，记为
+\[
+f(\boldsymbol{v}) \doteq \max_{\pi \in \Pi} \left( \boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v} \right)
+\]
+于是贝尔曼最优方程可简写为不动点形式：
+\begin{equation}
+\label{eq:boe_fixed_point}
+\boldsymbol{v} = f(\boldsymbol{v})
+\end{equation}
+
+\subsubsection*{3.3.3 压缩映射定理}
+
+贝尔曼最优方程是形如 $\boldsymbol{v}=f(\boldsymbol{v})$ 的非线性不动点方程，分析这类方程的核心工具是\textbf{压缩映射定理}（又称不动点定理）。
+
+\begin{theorembox}[3.1 压缩映射定理]
+    对于方程 $x = f(x)$（$x$ 与 $f(x)$ 为实向量），若映射 $f$ 是压缩映射，即存在 $\gamma \in (0,1)$，使得对任意 $x_1, x_2$ 都有
+    \[
+    \| f(x_1) - f(x_2) \| \leq \gamma \| x_1 - x_2 \|
+    \]
+    则以下三条性质成立：
+    \begin{enumerate}
+        \item \textbf{存在性}：存在不动点 $x^*$ 满足 $f(x^*) = x^*$。
+        \item \textbf{唯一性}：不动点 $x^*$ 是唯一的。
+        \item \textbf{迭代收敛性}：迭代过程 $x_{k+1} = f(x_k)$（$k=0,1,2,\dots$）对任意初始值 $x_0$ 都收敛到 $x^*$，且收敛速度为指数级。
+    \end{enumerate}
+\end{theorembox}
+
+压缩映射定理不仅保证了解的存在性与唯一性，还给出了数值求解算法——迭代法。
+
+\begin{proofbox}
+    我们通过柯西序列的性质分四步证明该定理。
+
+    \textbf{第一步：证明迭代序列 $\{x_k\}_{k=1}^\infty$ 是柯西序列}
+
+    由压缩映射性质，相邻迭代项满足：
+    \[
+    \| x_{k+1} - x_k \| = \| f(x_k) - f(x_{k-1}) \| \leq \gamma \| x_k - x_{k-1} \|
+    \]
+    递推可得：
+    \[
+    \| x_{k+1} - x_k \| \leq \gamma^k \| x_1 - x_0 \|
+    \]
+
+    对任意 $m > n$，由三角不等式：
+    \[
+    \begin{aligned}
+    \| x_m - x_n \| &\leq \sum_{k=n}^{m-1} \| x_{k+1} - x_k \| \\
+    &\leq \sum_{k=n}^{m-1} \gamma^k \| x_1 - x_0 \| \\
+    &\leq \gamma^n \sum_{k=0}^{\infty} \gamma^k \| x_1 - x_0 \| \\
+    &= \frac{\gamma^n}{1-\gamma} \| x_1 - x_0 \|
+    \end{aligned}
+    \]
+
+    由于 $\gamma < 1$，当 $n \to \infty$ 时右端趋于0，因此 $\{x_k\}$ 是柯西序列，必定收敛到某个极限 $x^* = \lim_{k \to \infty} x_k$。
+
+    \textbf{第二步：证明极限 $x^*$ 是不动点}
+
+    由 $\| x_{k+1} - x_k \| \leq \gamma^k \| x_1 - x_0 \|$，当 $k \to \infty$ 时 $\| f(x_k) - x_k \| \to 0$，因此在极限处有 $f(x^*) = x^*$，即 $x^*$ 是不动点。
+
+    \textbf{第三步：证明不动点唯一}
+
+    假设存在两个不动点 $x^*$ 和 $x'$，满足 $f(x^*)=x^*$ 且 $f(x')=x'$。则：
+    \[
+    \| x' - x^* \| = \| f(x') - f(x^*) \| \leq \gamma \| x' - x^* \|
+    \]
+    由于 $\gamma < 1$，该不等式成立当且仅当 $\| x' - x^* \| = 0$，即 $x' = x^*$，故不动点唯一。
+
+    \textbf{第四步：证明指数级收敛速度}
+
+    由第一步的结论，令 $m \to \infty$ 可得：
+    \[
+    \| x^* - x_n \| \leq \frac{\gamma^n}{1-\gamma} \| x_1 - x_0 \|
+    \]
+    误差随迭代步数 $n$ 指数衰减，因此收敛速度为指数级。
+\end{proofbox}
+
+\subsubsection*{3.3.4 贝尔曼最优方程右端的压缩性质}
+
+要将压缩映射定理应用于贝尔曼最优方程，需要证明 $f(\boldsymbol{v})$ 是压缩映射。
+
+\begin{theorembox}[3.2 $f(\boldsymbol{v})$ 的压缩性质]
+    贝尔曼最优方程右端的映射 $f(\boldsymbol{v}) = \max_{\pi \in \Pi} (\boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v})$ 是无穷范数下的压缩映射，即对任意 $\boldsymbol{v}_1, \boldsymbol{v}_2 \in \mathbb{R}^{|\mathcal{S}|}$，都有
+    \[
+    \| f(\boldsymbol{v}_1) - f(\boldsymbol{v}_2) \|_\infty \leq \gamma \| \boldsymbol{v}_1 - \boldsymbol{v}_2 \|_\infty
+    \]
+    其中 $\gamma \in (0,1)$ 为折扣因子，$\|\cdot\|_\infty$ 为向量的无穷范数（最大绝对值范数）。
+\end{theorembox}
+
+\begin{proofbox}
+    设 $\pi_1^* = \arg\max_\pi (\boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}_1)$，$\pi_2^* = \arg\max_\pi (\boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}_2)$，则由最大值的定义有：
+    \[
+    f(\boldsymbol{v}_1) = \boldsymbol{r}_{\pi_1^*} + \gamma \boldsymbol{P}_{\pi_1^*} \boldsymbol{v}_1 \geq \boldsymbol{r}_{\pi_2^*} + \gamma \boldsymbol{P}_{\pi_2^*} \boldsymbol{v}_1
+    \]
+    \[
+    f(\boldsymbol{v}_2) = \boldsymbol{r}_{\pi_2^*} + \gamma \boldsymbol{P}_{\pi_2^*} \boldsymbol{v}_2 \geq \boldsymbol{r}_{\pi_1^*} + \gamma \boldsymbol{P}_{\pi_1^*} \boldsymbol{v}_2
+    \]
+    上述比较均为按元素比较。
+
+    对 $f(\boldsymbol{v}_1) - f(\boldsymbol{v}_2)$ 做放缩：
+    \[
+    \begin{aligned}
+    f(\boldsymbol{v}_1) - f(\boldsymbol{v}_2) &= \boldsymbol{r}_{\pi_1^*} + \gamma \boldsymbol{P}_{\pi_1^*} \boldsymbol{v}_1 - \left( \boldsymbol{r}_{\pi_2^*} + \gamma \boldsymbol{P}_{\pi_2^*} \boldsymbol{v}_2 \right) \\
+    &\leq \boldsymbol{r}_{\pi_1^*} + \gamma \boldsymbol{P}_{\pi_1^*} \boldsymbol{v}_1 - \left( \boldsymbol{r}_{\pi_1^*} + \gamma \boldsymbol{P}_{\pi_1^*} \boldsymbol{v}_2 \right) \\
+    &= \gamma \boldsymbol{P}_{\pi_1^*} (\boldsymbol{v}_1 - \boldsymbol{v}_2)
+    \end{aligned}
+    \]
+
+    同理可得：
+    \[
+    f(\boldsymbol{v}_2) - f(\boldsymbol{v}_1) \leq \gamma \boldsymbol{P}_{\pi_2^*} (\boldsymbol{v}_2 - \boldsymbol{v}_1)
+    \]
+
+    因此有双向不等式：
+    \[
+    -\gamma \boldsymbol{P}_{\pi_2^*} (\boldsymbol{v}_1 - \boldsymbol{v}_2) \leq f(\boldsymbol{v}_1) - f(\boldsymbol{v}_2) \leq \gamma \boldsymbol{P}_{\pi_1^*} (\boldsymbol{v}_1 - \boldsymbol{v}_2)
+    \]
+
+    定义向量 $\boldsymbol{z}$，其每个元素为对应位置上界与下界的绝对值的最大值，则 $|f(\boldsymbol{v}_1) - f(\boldsymbol{v}_2)| \leq \boldsymbol{z}$，因此：
+    \[
+    \| f(\boldsymbol{v}_1) - f(\boldsymbol{v}_2) \|_\infty \leq \| \boldsymbol{z} \|_\infty
+    \]
+
+    对 $\boldsymbol{z}$ 的第 $i$ 个元素，设 $\boldsymbol{p}_i^T$ 和 $\boldsymbol{q}_i^T$ 分别为 $\boldsymbol{P}_{\pi_1^*}$ 和 $\boldsymbol{P}_{\pi_2^*}$ 的第 $i$ 行，则：
+    \[
+    z_i = \max\left\{ \gamma |\boldsymbol{p}_i^T (\boldsymbol{v}_1 - \boldsymbol{v}_2)|,\ \gamma |\boldsymbol{q}_i^T (\boldsymbol{v}_1 - \boldsymbol{v}_2)| \right\}
+    \]
+
+    由于状态转移矩阵的行和为1且元素非负，因此：
+    \[
+    |\boldsymbol{p}_i^T (\boldsymbol{v}_1 - \boldsymbol{v}_2)| \leq \boldsymbol{p}_i^T |\boldsymbol{v}_1 - \boldsymbol{v}_2| \leq \| \boldsymbol{v}_1 - \boldsymbol{v}_2 \|_\infty
+    \]
+    同理 $|\boldsymbol{q}_i^T (\boldsymbol{v}_1 - \boldsymbol{v}_2)| \leq \| \boldsymbol{v}_1 - \boldsymbol{v}_2 \|_\infty$。
+
+    因此 $z_i \leq \gamma \| \boldsymbol{v}_1 - \boldsymbol{v}_2 \|_\infty$，对所有 $i$ 取最大值得：
+    \[
+    \| \boldsymbol{z} \|_\infty \leq \gamma \| \boldsymbol{v}_1 - \boldsymbol{v}_2 \|_\infty
+    \]
+
+    联立可得 $\| f(\boldsymbol{v}_1) - f(\boldsymbol{v}_2) \|_\infty \leq \gamma \| \boldsymbol{v}_1 - \boldsymbol{v}_2 \|_\infty$，压缩性质得证。
+\end{proofbox}
+
+\subsection*{3.4 从贝尔曼最优方程求解最优策略}
+
+基于压缩映射定理，我们可以严格分析贝尔曼最优方程的解，并得到最优状态价值与最优策略。
+
+\subsubsection*{求解最优状态价值 $v^*$}
+
+若 $v^*$ 是贝尔曼最优方程的解，则满足：
+\[
+\boldsymbol{v}^* = \max_{\pi \in \Pi} \left( \boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}^* \right)
+\]
+即 $\boldsymbol{v}^*$ 是映射 $f$ 的不动点。结合压缩映射定理，可得到如下核心结论。
+
+\begin{theorembox}[3.3 解的存在性、唯一性与迭代算法]
+    对于贝尔曼最优方程 $\boldsymbol{v} = f(\boldsymbol{v}) = \max_{\pi \in \Pi} (\boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v})$：
+    \begin{enumerate}
+        \item 存在唯一的解 $\boldsymbol{v}^*$，即最优状态价值；
+        \item 可通过迭代算法求解：
+        \[
+        \boldsymbol{v}_{k+1} = f(\boldsymbol{v}_k) = \max_{\pi \in \Pi} \left( \boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}_k \right), \quad k=0,1,2,\dots
+        \]
+        对任意初始值 $\boldsymbol{v}_0$，迭代序列 $\boldsymbol{v}_k$ 都将以指数速度收敛到 $\boldsymbol{v}^*$。
+    \end{enumerate}
+\end{theorembox}
+
+该迭代算法就是第4讲将详细介绍的\textbf{值迭代算法}。
+
+\subsubsection*{求解最优策略 $\pi^*$}
+
+得到最优状态价值 $\boldsymbol{v}^*$ 后，最优策略可通过下式求解：
+\[
+\pi^* = \arg\max_{\pi \in \Pi} \left( \boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}^* \right)
+\]
+
+将 $\pi^*$ 代入贝尔曼最优方程可得：
+\[
+\boldsymbol{v}^* = \boldsymbol{r}_{\pi^*} + \gamma \boldsymbol{P}_{\pi^*} \boldsymbol{v}^*
+\]
+这说明 $\boldsymbol{v}^* = v_{\pi^*}$，即最优状态价值正是最优策略对应的状态价值，贝尔曼最优方程是对应最优策略的特殊贝尔曼方程。
+
+接下来的定理保证了上述解的最优性。
+
+\begin{theorembox}[3.4 $v^*$ 与 $\pi^*$ 的最优性]
+    贝尔曼最优方程的解 $\boldsymbol{v}^*$ 是最优状态价值，对应的 $\pi^*$ 是最优策略。即对任意策略 $\pi$，都有
+    \[
+    v^* = v_{\pi^*} \geq v_\pi
+    \]
+    其中不等号为按元素比较。
+\end{theorembox}
+
+\begin{proofbox}
+    对任意策略 $\pi$，其状态价值满足贝尔曼方程：
+    \[
+    \boldsymbol{v}_\pi = \boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}_\pi
+    \]
+
+    由 $\boldsymbol{v}^*$ 的定义，有：
+    \[
+    \boldsymbol{v}^* = \max_\pi (\boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}^*) = \boldsymbol{r}_{\pi^*} + \gamma \boldsymbol{P}_{\pi^*} \boldsymbol{v}^* \geq \boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}^*
+    \]
+
+    两式相减得：
+    \[
+    \boldsymbol{v}^* - \boldsymbol{v}_\pi \geq (\boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}^*) - (\boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi \boldsymbol{v}_\pi) = \gamma \boldsymbol{P}_\pi (\boldsymbol{v}^* - \boldsymbol{v}_\pi)
+    \]
+
+    反复应用该不等式递推可得：
+    \[
+    \boldsymbol{v}^* - \boldsymbol{v}_\pi \geq \gamma^n \boldsymbol{P}_\pi^n (\boldsymbol{v}^* - \boldsymbol{v}_\pi)
+    \]
+
+    当 $n \to \infty$ 时，由于 $\gamma < 1$ 且 $\boldsymbol{P}_\pi^n$ 是行和为1的非负矩阵，右端趋于零向量，因此：
+    \[
+    \boldsymbol{v}^* - \boldsymbol{v}_\pi \geq 0
+    \]
+    即对任意策略 $\pi$ 都有 $v^* \geq v_\pi$，最优性得证。
+\end{proofbox}
+
+\subsubsection*{贪心最优策略}
+
+进一步地，我们可以证明存在确定性的贪心最优策略。
+
+\begin{theorembox}[3.5 贪心最优策略]
+    对任意状态 $s \in \mathcal{S}$，如下确定性贪心策略是最优策略：
+    \begin{equation}
+    \pi^*(a \mid s) =
+    \begin{cases}
+    1, & a = a^*(s) \\
+    0, & a \neq a^*(s)
+    \end{cases}
+    \end{equation}
+    其中 $a^*(s) = \arg\max_a q_*(s, a)$，最优动作价值定义为：
+    \[
+    q_*(s, a) \doteq \sum_{r \in \mathcal{R}} p(r \mid s, a) r + \gamma \sum_{s' \in \mathcal{S}} p(s' \mid s, a) v_*(s')
+    \]
+\end{theorembox}
+
+\begin{proofbox}
+    最优策略的元素形式为：
+    \[
+    \pi^*(s) = \arg\max_{\pi \in \Pi(s)} \sum_{a \in \mathcal{A}} \pi(a \mid s) q_*(s, a)
+    \]
+
+    由3.3.1节的结论，加权和 $\sum_a \pi(a \mid s) q_*(s, a)$ 在策略将全部概率赋予最大动作价值的动作时取得最大值，因此上述贪心策略是最优策略。
+\end{proofbox}
+
+关于最优策略，有两点重要性质：
+- \textbf{唯一性}：最优状态价值 $v^*$ 是唯一的，但对应的最优策略不一定唯一，可能存在多个策略达到相同的最优状态价值。
+- \textbf{随机性}：最优策略可以是随机的也可以是确定性的，但一定存在确定性的贪心最优策略。
+
+\subsection*{3.5 影响最优策略的因素}
+
+通过贝尔曼最优方程可以分析影响最优策略的因素。从方程形式可以看出，最优状态价值与最优策略由三个要素决定：即时奖励 $r$、折扣因子 $\gamma$、环境模型 $p(s' \mid s,a)$ 和 $p(r \mid s,a)$。
+
+\subsubsection*{折扣因子的影响}
+
+折扣因子 $\gamma$ 决定了智能体的“远见程度”：
+- 当 $\gamma$ 较大时（如 $\gamma=0.9$），智能体更看重长期回报，愿意承担短期风险以获取更高的长期收益，甚至愿意穿过禁区到达目标区域。
+- 当 $\gamma$ 较小时（如 $\gamma=0.5$），智能体变得短视，会规避短期风险，选择更保守的路径绕开禁区。
+- 当 $\gamma=0$ 时，智能体完全只看即时奖励，无法规划到达目标的路径。
+
+此外，状态价值的空间分布呈现出“离目标越近价值越高”的规律，这正是折扣因子作用的体现：路径越长，未来奖励的折扣衰减越严重。
+
+\subsubsection*{奖励值的影响}
+
+调整奖励值可以改变智能体的行为偏好。例如增大禁区的惩罚（如从-1改为-10），最优策略将主动避开所有禁区。
+
+但奖励值的调整并非都会改变最优策略，最优策略对奖励的仿射变换具有不变性。
+
+\begin{theorembox}[3.6 最优策略不变性]
+    设原MDP的最优状态价值为 $v^*$，满足 $v^* = \max_\pi (\boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi v^*)$。若将所有奖励做仿射变换 $r \to \alpha r + \beta$（其中 $\alpha > 0$，$\alpha, \beta \in \mathbb{R}$），则新的最优状态价值为：
+    \begin{equation}
+    v' = \alpha v^* + \frac{\beta}{1-\gamma} \boldsymbol{1}
+    \end{equation}
+    其中 $\boldsymbol{1}$ 为全1向量。由此得到的最优策略与原最优策略完全相同，即最优策略在奖励的仿射变换下保持不变。
+\end{theorembox}
+
+\begin{proofbox}
+    奖励做仿射变换后，策略的即时奖励向量变为 $\boldsymbol{r}_\pi' = \alpha \boldsymbol{r}_\pi + \beta \boldsymbol{1}$，新的贝尔曼最优方程为：
+    \[
+    v' = \max_{\pi \in \Pi} \left( \alpha \boldsymbol{r}_\pi + \beta \boldsymbol{1} + \gamma \boldsymbol{P}_\pi v' \right)
+    \]
+
+    我们猜测解的形式为 $v' = \alpha v^* + c \boldsymbol{1}$，其中 $c = \beta/(1-\gamma)$，代入方程右端：
+    \[
+    \begin{aligned}
+    \max_\pi \left( \alpha \boldsymbol{r}_\pi + \beta \boldsymbol{1} + \gamma \boldsymbol{P}_\pi (\alpha v^* + c \boldsymbol{1}) \right)
+    &= \max_\pi \left( \alpha \boldsymbol{r}_\pi + \beta \boldsymbol{1} + \alpha \gamma \boldsymbol{P}_\pi v^* + c\gamma \boldsymbol{1} \right) \\
+    &= \alpha \max_\pi \left( \boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi v^* \right) + (\beta + c\gamma) \boldsymbol{1}
+    \end{aligned}
+    \]
+    其中利用了 $\boldsymbol{P}_\pi \boldsymbol{1} = \boldsymbol{1}$ 的性质。
+
+    由于 $v^* = \max_\pi (\boldsymbol{r}_\pi + \gamma \boldsymbol{P}_\pi v^*)$，代入得：
+    \[
+    \text{右端} = \alpha v^* + (\beta + c\gamma) \boldsymbol{1}
+    \]
+
+    令其等于左端 $\alpha v^* + c \boldsymbol{1}$，解得 $c = \beta + c\gamma$，即 $c = \beta/(1-\gamma)$，与假设一致。
+
+    因此 $v' = \alpha v^* + \frac{\beta}{1-\gamma} \boldsymbol{1}$ 是新方程的解。由于解唯一，这就是新的最优状态价值。
+
+    由于仿射变换不改变动作价值之间的相对大小关系，因此贪心最优策略保持不变。
+\end{proofbox}
+
+\subsubsection*{避免无意义绕路}
+
+一个常见的疑问是：如果每步移动的即时奖励为0，最优策略是否会在到达目标前无意义地绕路？
+
+答案是否定的。即使每步即时奖励为0，折扣因子也会自动促使智能体尽快到达目标：绕路会增加轨迹长度，导致未来目标奖励的折扣衰减更严重，从而降低总回报。因此，更短的轨迹对应更高的折扣回报，最优策略不会选择无意义的绕路。
+
+\begin{remarkbox}
+    为每步移动增加负奖励以促使智能体走最短路径，本质上是对奖励做仿射变换，并不会改变最优策略。折扣因子本身已经隐含了“尽快到达目标”的激励。
+\end{remarkbox}
+
+\subsection*{3.6 本章小结}
+
+本章的核心概念是最优策略与最优状态价值：若一个策略在所有状态上的状态价值都不低于其他任何策略，则称其为最优策略，对应的状态价值为最优状态价值。
+
+本章的核心工具是贝尔曼最优方程，它是一个具有压缩性质的非线性不动点方程。通过压缩映射定理可以证明：该方程存在唯一的最优状态价值解，且可通过迭代算法指数收敛到该解；对应的贪心策略即为最优策略。
+
+本章的结论是后续值迭代、策略迭代等核心算法的理论基础。
+
+\subsection*{3.7 常见问题解答}
+
+\begin{itemize}
+    \item \textbf{Q：最优策略的定义是什么？}
+    
+    A：若一个策略对应的状态价值在所有状态上都大于等于其他任意策略，则该策略为最优策略。该定义适用于表格型强化学习，函数近似场景下需要采用其他评价标准。
+
+    \item \textbf{Q：贝尔曼最优方程为什么重要？}
+    
+    A：它同时刻画了最优策略与最优状态价值，求解该方程即可得到最优策略与对应的最优状态价值。
+
+    \item \textbf{Q：贝尔曼最优方程属于贝尔曼方程吗？}
+    
+    A：是的。贝尔曼最优方程是一类特殊的贝尔曼方程，其对应的策略为最优策略。
+
+    \item \textbf{Q：贝尔曼最优方程的解是唯一的吗？}
+    
+    A：最优状态价值的解是唯一的，但对应的最优策略不一定唯一，可能存在多个策略达到相同的最优状态价值。
+
+    \item \textbf{Q：分析贝尔曼最优方程解的关键性质是什么？}
+    
+    A：方程右端的映射是压缩映射，因此可以应用压缩映射定理分析解的存在性、唯一性与收敛性。
+
+    \item \textbf{Q：最优策略一定存在吗？}
+    
+    A：是的，基于贝尔曼最优方程的分析，最优策略总是存在的。
+
+    \item \textbf{Q：最优策略是随机的还是确定性的？}
+    
+    A：最优策略既可以是随机的也可以是确定性的，但一定存在确定性的贪心最优策略。
+
+    \item \textbf{Q：如何得到最优策略？}
+    
+    A：通过迭代算法求解贝尔曼最优方程，得到最优状态价值后，取贪心策略即可得到最优策略。后续章节介绍的各类强化学习算法，本质上都是在不同设定下求解最优策略。
+
+    \item \textbf{Q：减小折扣因子对最优策略有什么影响？}
+    
+    A：折扣因子减小会使最优策略变得更短视，智能体不愿承担短期风险，即使长期收益更高。
+
+    \item \textbf{Q：折扣因子设为0会怎样？}
+    
+    A：此时智能体完全只关注即时奖励，会选择当前即时奖励最大的动作，不考虑长期后果。
+
+    \item \textbf{Q：所有奖励同时增加相同数值，最优状态价值和最优策略会变化吗？}
+    
+    A：最优状态价值会增加（满足仿射变换公式），但最优策略保持不变。因为这是奖励的仿射变换，不改变动作价值的相对大小。
+
+    \item \textbf{Q：为了让智能体不绕路，需要给每步加负奖励吗？}
+    
+    A：不需要。首先，给所有步骤加相同负奖励是仿射变换，不改变最优策略；其次，折扣因子本身会激励智能体尽快到达目标，绕路会降低折扣回报。
+\end{itemize}
+
+\end{document}
